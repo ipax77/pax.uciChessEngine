@@ -249,12 +249,18 @@ internal static class StatusService
                 }
                 else if (type == "combo")
                 {
+                    Match defaultMatch = optionDefaultRx.Match(output);
+                    {
+                        defaultValue = defaultMatch.Groups[1].Value;
+                        Value = defaultValue;
+                    }
+
                     vars = new List<string>();
                     Match comboMatch = optionComboRx.Match(output);
                     while (comboMatch.Success)
                     {
                         vars.Add(comboMatch.Groups[1].Value);
-                        comboMatch.NextMatch();
+                        comboMatch = comboMatch.NextMatch();
                     }
                 }
                 status.Options.Add(new Option(name, type, defaultValue, vars, min, max));
