@@ -74,6 +74,7 @@ public sealed class Engine : IDisposable
 
     public void Stop()
     {
+        Send("quit");
         engineProcess?.Close();
         engineProcess?.Dispose();
     }
