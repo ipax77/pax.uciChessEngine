@@ -13,7 +13,6 @@ public sealed class Analyzes : IDisposable
     public Game Game { get; private set; } = new Game();
     private string? Fen;
     public TimeSpan Refreshtime { get; set; }
-    private CancellationToken Token;
     private CancellationTokenSource? TokenSource;
     public event EventHandler<List<EngineInfo>>? EngineInfoAvailable;
     private object lockobject = new object();
@@ -25,10 +24,9 @@ public sealed class Analyzes : IDisposable
         EngineInfoAvailable?.Invoke(this, infos);
     }
 
-    public Analyzes(Game game, CancellationToken token, string? fen = null)
+    public Analyzes(Game game, string? fen = null)
     {
         Game = game;
-        Token = token;
         Fen = fen;
         Refreshtime = TimeSpan.FromMilliseconds(250);
     }
@@ -73,7 +71,7 @@ public sealed class Analyzes : IDisposable
 
     public async Task UpdateEngineGame()
     {
-        var moves = Game.State.Moves.Take(Game.ObserverMove - 1).Select(s => s.EngineMove.ToString());
+        var moves = Game.State.Moves.Take(Game.ObserverMove).Select(s => s.EngineMove.ToString());
         foreach (var engine in Engines)
         {
             engine.Send("stop");
@@ -133,6 +131,7 @@ public sealed class Analyzes : IDisposable
         {
             InfoUpdateRunning = false;
             TokenSource.Dispose();
+            TokenSource = null;
         }
     }
 

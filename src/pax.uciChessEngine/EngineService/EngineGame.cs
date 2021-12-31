@@ -14,33 +14,43 @@ public partial class EngineGame : IDisposable
 
     public Guid Guid = Guid.NewGuid();
     public string Description { get; init; }
-    public Engine WhiteEngine { get; init; }
-    public Engine BlackEngine { get; init; }
+    public Engine WhiteEngine { get; private set; }
+    public Engine BlackEngine { get; private set; }
     public Game Game { get; private set; }
     public event EventHandler<EngineMoveEventArgs>? EngineMoved;
     public List<int> WhiteEvaluations { get; private set; } = new List<int>();
     public List<int> BlackEvaluations { get; private set; } = new List<int>();
-    public int CpuCoresUsed => WhiteEngine.Threads() + BlackEngine.Threads();
+    public int CpuCoresUsed => (WhiteEngine == null ? 0 : WhiteEngine.Threads()) + (BlackEngine == null ? 0 : BlackEngine.Threads());
 
     protected virtual void OnEngineMoved(EngineMoveEventArgs e)
     {
         EngineMoved?.Invoke(this, e);
     }
 
-    public EngineGame(string whiteEngineName, string whiteEngineBinary, string blackEngineName, string blackEngineBinary, Game game, string desc)
+    public EngineGame(Engine whiteEngine, Engine blackEngine, Game game, string desc)
     {
         Description = desc;
-        WhiteEngine = new Engine(whiteEngineName, whiteEngineBinary);
-        BlackEngine = new Engine(blackEngineName, blackEngineBinary);
-        WhiteEngine.Start();
-        BlackEngine.Start();
         Game = game;
-        WhiteEngine.Status.MoveReady += WhiteMoveReady;
-        BlackEngine.Status.MoveReady += BlackMoveReady;
+        WhiteEngine = whiteEngine;
+        BlackEngine = blackEngine;
     }
 
-    public async Task Start(TimeSpan whitetime, TimeSpan whiteincrement, TimeSpan blacktime = new TimeSpan(), TimeSpan blackincrement = new TimeSpan())
+    public void SetEngine(Engine engine, bool isBlack)
     {
+        if (isBlack)
+        {
+            WhiteEngine = engine;
+        }
+        else
+        {
+            BlackEngine = engine;
+        }
+    }
+
+    public async Task Start()
+    {
+        WhiteEngine.Start();
+        BlackEngine.Start();
         await WhiteEngine.IsReady();
         await BlackEngine.IsReady();
 
@@ -52,7 +62,7 @@ public partial class EngineGame : IDisposable
         BlackEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}");
         await WhiteEngine.IsReady();
         await BlackEngine.IsReady();
-        Game.Time = new Time(whitetime, whiteincrement, blacktime, blackincrement);
+        // Game.Time = new Time(whitetime, whiteincrement, blacktime, blackincrement);
 
         await WhiteEngine.GetOptions();
         await BlackEngine.GetOptions();
@@ -61,6 +71,9 @@ public partial class EngineGame : IDisposable
         WhiteEngine.SetOption("Threads", 2);
         BlackEngine.SetOption("Threads", 2);
 
+        WhiteEngine.Status.MoveReady += WhiteMoveReady;
+        BlackEngine.Status.MoveReady += BlackMoveReady;
+        
         Go(Game.State.Info.BlackToMove ? BlackEngine : WhiteEngine);
     }
 
