@@ -1,4 +1,5 @@
 ﻿using pax.chess;
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
@@ -9,8 +10,17 @@ public class GameAnalysis
     private Channel<InfoHelper> InfoChannel = Channel.CreateUnbounded<InfoHelper>();
     private int _Done;
     public int Done => _Done;
+    public ConcurrentBag<InfoHelper> Infos { get; private set; } = new ConcurrentBag<InfoHelper>();
+    public Game Game { get; private set; }
+    public KeyValuePair<string, string> Engine { get; private set; }
 
-    public async IAsyncEnumerable<InfoHelper> Analyse(Game game, [EnumeratorCancellation] CancellationToken token, int _threads = 0)
+    public GameAnalysis(Game game, KeyValuePair<string, string> engine)
+    {
+        Game = game;
+        Engine = engine;
+    }
+
+    public async IAsyncEnumerable<InfoHelper> Analyse([EnumeratorCancellation] CancellationToken token, int _threads = 0)
     {
         int threads = _threads;
         if (threads <= 0)
@@ -19,25 +29,25 @@ public class GameAnalysis
         }
 
         List<EngineMoveNum> engineMoves = new List<EngineMoveNum>();
-        for (int i = 0; i < game.State.Moves.Count; i++)
+        for (int i = 0; i < Game.State.Moves.Count; i++)
         {
-            var move = game.State.Moves[i];
+            var move = Game.State.Moves[i];
             engineMoves.Add(new EngineMoveNum(i, move.EngineMove));
         }
         int chunkSize = engineMoves.Count / threads + 1;
         var chunks = engineMoves.Chunk(chunkSize);
 
-        _ = Produce(game, chunks, token);
+        _ = Produce(Game, chunks, token);
 
         while (await InfoChannel.Reader.WaitToReadAsync(token))
         {
             InfoHelper? info;
             if (InfoChannel.Reader.TryRead(out info))
             {
+                Infos.Add(info);
                 yield return info;
             }
         }
-        Console.WriteLine("indahouse");
     }
 
     private async Task Produce(Game game, IEnumerable<EngineMoveNum[]> chunks, CancellationToken token)
@@ -61,27 +71,16 @@ public class GameAnalysis
     private async Task ChunkAnalyse(Game game, EngineMoveNum[] engineMoves, CancellationToken token)
     {
         int startPos = engineMoves[0].HalfMoveNumber;
-        Engine engine = new Engine("Stockfish", @"C:\data\stockfish_14.1_win_x64_avx2\stockfish_14.1_win_x64_avx2.exe");
+        Engine engine = new Engine(Engine.Key, Engine.Value);
         engine.Start();
-        if (!await engine.IsReady())
-        {
-            Console.WriteLine($"engine error 1.5");
-        }
+        await engine.IsReady();
         await engine.GetOptions();
-        if (!await engine.IsReady())
-        {
-            Console.WriteLine($"engine error 1.55");
-        }
+        await engine.IsReady();
         engine.SetOption("Threads", 2);
-        if (!await engine.IsReady())
-        {
-            Console.WriteLine($"engine error 1.6");
-        }
+        await engine.IsReady();
         engine.SetOption("MultiPV", 2);
-        if (!await engine.IsReady())
-        {
-            Console.WriteLine($"engine error 1.7");
-        }
+        await engine.IsReady();
+
         for (int i = 0; i < engineMoves.Length; i++)
         {
             if (token.IsCancellationRequested)
@@ -89,20 +88,13 @@ public class GameAnalysis
                 engine.Dispose();
                 return;
             }
-            engine.Send($"position startpos moves {String.Join(" ", game.State.Moves.Take(startPos + i).Select(s => Map.GetEngineMoveString(s)))}");
-            if (!await engine.IsReady())
-            {
-                Console.WriteLine($"engine error 2");
-            }
-            var move = game.State.Moves.Last();
+            engine.Send($"position startpos moves {String.Join(" ", game.State.Moves.Take(startPos + i).Select(s => s.EngineMove.ToString()))}");
+            await engine.IsReady();
 
             engine.Send("go");
             await Task.Delay(2000);
             engine.Send("stop");
-            if (!await engine.IsReady())
-            {
-                Console.WriteLine($"engine error 3");
-            }
+            await engine.IsReady();
 
             var info = engine.GetInfo();
             if (info.PvInfos.Count > 1)
@@ -110,8 +102,8 @@ public class GameAnalysis
                 var gameMove = game.State.Moves[startPos + i].PgnMove;
                 var result = new InfoHelper(
                     startPos + i,
-                    new Evaluation(info.PvInfos[0].Score, info.PvInfos[0].Mate, game.State.Info.BlackToMove),
-                    new Evaluation(info.PvInfos[1].Score, info.PvInfos[1].Mate, game.State.Info.BlackToMove),
+                    new Evaluation(info.PvInfos[0].Score, info.PvInfos[0].Mate, (startPos + i) % 2 != 0),
+                    new Evaluation(info.PvInfos[1].Score, info.PvInfos[1].Mate, (startPos + i) % 2 != 0),
                     info.PvInfos[0].Moves.First().ToString(),
                     info.PvInfos[1].Moves.First().ToString(),
                     gameMove);
@@ -127,6 +119,13 @@ public class GameAnalysis
     }
 }
 
+public record AnalyzeRequest
+{
+    public string EngineName { get; set; } = "Stockfish";
+    public int Threads { get; set; }
+    public int MultiPV { get; set; }
+    public Game? Game { get; set; }
+}
 
 public record InfoHelper
 {
@@ -136,6 +135,8 @@ public record InfoHelper
     public string BestMove { get; init; }
     public string RunnerMove { get; init; }
     public string GameMove { get; init; }
+    public string BestPgnMove { get; set; } = String.Empty;
+    public string RunnerPgnMove { get; set; } = String.Empty;
 
     public InfoHelper(int moveNumber, Evaluation eval, Evaluation reval, string bmove, string rmove, string gmove)
     {

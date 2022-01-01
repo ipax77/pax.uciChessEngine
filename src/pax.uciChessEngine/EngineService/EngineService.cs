@@ -12,6 +12,8 @@ public class EngineService
 {
     private List<Analyzes> Analyzes = new List<Analyzes>();
     private List<EngineGame> EngineGames = new List<EngineGame>();
+    private List<GameAnalysis> GameAnalyses = new List<GameAnalysis>();
+
     public Dictionary<string, string> AvailableEngines { get; private set; } = new Dictionary<string, string>();
     private IConfiguration _configuration;
 
@@ -33,6 +35,7 @@ public class EngineService
 
     public List<Analyzes> GetAnalyzes() => Analyzes;
     public List<EngineGame> GetEngineGames() => EngineGames;
+    public List<GameAnalysis> GetGameAnalyses() => GameAnalyses;
 
     public async Task<Analyzes> CreateAnalyzes(Game game, string? fen = null)
     {
@@ -81,5 +84,12 @@ public class EngineService
     {
         EngineGames.Remove(engineGame);
         engineGame.Dispose();
+    }
+
+    public GameAnalysis CreateGameAnalyzes(Game game, string engineName)
+    {
+        GameAnalysis analyses = new GameAnalysis(game, new KeyValuePair<string, string>(engineName, AvailableEngines[engineName]));
+        GameAnalyses.Add(analyses);
+        return analyses;
     }
 }
