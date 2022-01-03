@@ -1,18 +1,13 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using pax.chess;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace pax.uciChessEngine;
 public class EngineService
 {
     private List<Analyzes> Analyzes = new List<Analyzes>();
     private List<EngineGame> EngineGames = new List<EngineGame>();
-    private List<GameAnalysis> GameAnalyses = new List<GameAnalysis>();
+    private List<GameAnalyzes> GameAnalyzis = new List<GameAnalyzes>();
 
     public Dictionary<string, string> AvailableEngines { get; private set; } = new Dictionary<string, string>();
     private IConfiguration _configuration;
@@ -35,7 +30,7 @@ public class EngineService
 
     public List<Analyzes> GetAnalyzes() => Analyzes;
     public List<EngineGame> GetEngineGames() => EngineGames;
-    public List<GameAnalysis> GetGameAnalyses() => GameAnalyses;
+    public List<GameAnalyzes> GetGameAnalyses() => GameAnalyzis;
 
     public async Task<Analyzes> CreateAnalyzes(Game game, string? fen = null)
     {
@@ -86,10 +81,10 @@ public class EngineService
         engineGame.Dispose();
     }
 
-    public GameAnalysis CreateGameAnalyzes(Game game, string engineName)
+    public GameAnalyzes CreateGameAnalyzes(Game game, string engineName)
     {
-        GameAnalysis analyses = new GameAnalysis(game, new KeyValuePair<string, string>(engineName, AvailableEngines[engineName]));
-        GameAnalyses.Add(analyses);
+        GameAnalyzes analyses = new GameAnalyzes(game, new KeyValuePair<string, string>(engineName, AvailableEngines[engineName]));
+        GameAnalyzis.Add(analyses);
         return analyses;
     }
 }

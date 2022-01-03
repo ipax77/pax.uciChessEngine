@@ -55,26 +55,40 @@ public sealed class Engine : IDisposable
         engineProcess = new Process();
         engineProcess.StartInfo = processStartInfo;
 
-        engineProcess.OutputDataReceived += (sender, args) =>
-        {
-            HandleOutput(args.Data);
-        };
-        engineProcess.ErrorDataReceived += (sender, args) =>
-        {
-            HandleOutput(args.Data, true);
-        };
+        engineProcess.OutputDataReceived += new DataReceivedEventHandler(HandleOutputData);
+        // engineProcess.ErrorDataReceived += new DataReceivedEventHandler(HandleErrorData);
 
         engineProcess.Start();
         engineProcess.BeginOutputReadLine();
-        engineProcess.BeginErrorReadLine();
+        // engineProcess.BeginErrorReadLine();
+
 
         logger.LogDebug($"{Guid} {Name} started.");
         // SetDefaultConfig();
     }
 
+    private void HandleOutputData(object sender, DataReceivedEventArgs e)
+    {
+        if (!String.IsNullOrEmpty(e.Data))
+        {
+            HandleOutput(e.Data);
+        }
+    }
+
+    private void HandleErrorData(object sender, DataReceivedEventArgs e)
+    {
+        if (!String.IsNullOrEmpty(e.Data))
+        {
+            logger.LogError($"engine {Name} error: {e.Data}");
+        }
+    }
+
     public void Stop()
     {
         Send("quit");
+        engineProcess?.WaitForExit(3000);
+
+        logger.LogInformation($"engine {Name} quit.");
         engineProcess?.Close();
         engineProcess?.Dispose();
     }
@@ -156,19 +170,18 @@ public sealed class Engine : IDisposable
         return new EngineInfo(Name, pvInfos);
     }
 
-    private void HandleOutput(string? info, bool error = false)
+    private void HandleOutput(string info, bool error = false)
     {
-        if (!String.IsNullOrEmpty(info))
-        {
-            StatusService.HandleOutput(Guid, info);
-        }
+        StatusService.HandleOutput(Guid, info);
     }
 
     public void Dispose()
     {
-        Stop();
+        if (engineProcess != null)
+        {
+            Stop();
+        }
         StatusService.DeleteStatus(Guid);
+
     }
-
-
 }

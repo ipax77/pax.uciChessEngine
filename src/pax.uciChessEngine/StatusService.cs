@@ -74,7 +74,15 @@ internal static class StatusService
                 KeyValuePair<Guid, string> output;
                 if (OutputChannel.Reader.TryRead(out output))
                 {
-                    ParseOutput(Stati[output.Key], output.Value);
+                    Status? status;
+                    if (Stati.TryGetValue(output.Key, out status))
+                    {
+                        ParseOutput(status, output.Value);
+                    }
+                    else
+                    {
+                        logger.LogWarning($"status {output.Key} not found");
+                    }
                 }
             }
         }
