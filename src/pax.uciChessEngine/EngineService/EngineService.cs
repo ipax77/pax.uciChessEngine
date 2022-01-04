@@ -87,4 +87,10 @@ public class EngineService
         GameAnalyzis.Add(analyses);
         return analyses;
     }
+
+    public void DeleteGameAnalyzes(GameAnalyzes gameAnalyzes)
+    {
+        GameAnalyzis.Remove(gameAnalyzes);
+        return;
+    }
 }
