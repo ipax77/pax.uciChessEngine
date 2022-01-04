@@ -7,12 +7,12 @@ public sealed class Engine : IDisposable
     public Guid Guid { get; private set; }
     private Process? engineProcess;
 
-    public Status Status => StatusService.Stati[Guid];
-
     public string Name { get; private set; }
     public string Binary { get; private set; }
 
     ILogger<Engine> logger => StatusService.logger;
+
+    public Status Status { get; private set; } = new Status();
 
     public int Threads()
     {
@@ -30,9 +30,9 @@ public sealed class Engine : IDisposable
     public Engine(string engineName, string engineBinary)
     {
         Guid = Guid.NewGuid();
-        StatusService.CreateStatus(Guid);
         Name = engineName;
         Binary = engineBinary;
+        StatusService.AddEngine(this);
     }
 
     public void Start()
@@ -88,7 +88,7 @@ public sealed class Engine : IDisposable
         Send("quit");
         engineProcess?.WaitForExit(3000);
 
-        logger.LogInformation($"engine {Name} quit.");
+        logger.LogInformation($"engine {Name} {Guid} quit.");
         engineProcess?.Close();
         engineProcess?.Dispose();
     }
@@ -163,11 +163,45 @@ public sealed class Engine : IDisposable
     public EngineInfo GetInfo()
     {
         List<PvInfo> pvInfos = new List<PvInfo>();
-        foreach (var pv in Status.Pvs)
+        foreach (var pv in Status.Pvs.Values)
         {
             pvInfos.Add(new PvInfo(pv.multipv, pv.GetValues(), pv.GetMoves()));
         }
         return new EngineInfo(Name, pvInfos);
+    }
+
+    public async Task<EngineInfo?> GetStopInfo(int fs = 40)
+    {
+        if (Status.State == EngineState.BestMove)
+        {
+            var info1 = GetInfo();
+            Status.Pvs.Clear();
+            return info1;
+        }
+        
+        CancellationTokenSource cts = new CancellationTokenSource();
+        Status.MoveReady += (o, e) =>
+        {
+            cts.Cancel();
+        };
+        Send("stop");
+        try
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                await Task.Delay(100, cts.Token);
+                fs--;
+                if (fs < 0)
+                {
+                    logger.LogError($"{Guid} {Name} failed waiting for bestmove.");
+                    return null;
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        var info2 = GetInfo();
+        Status.Pvs.Clear();
+        return info2;
     }
 
     private void HandleOutput(string info, bool error = false)
@@ -181,7 +215,6 @@ public sealed class Engine : IDisposable
         {
             Stop();
         }
-        StatusService.DeleteStatus(Guid);
-
+        StatusService.RemoveEngine(Guid);
     }
 }

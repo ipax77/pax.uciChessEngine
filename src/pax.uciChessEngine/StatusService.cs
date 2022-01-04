@@ -13,7 +13,7 @@ namespace pax.uciChessEngine;
 
 internal static class StatusService
 {
-    internal static ConcurrentDictionary<Guid, Status> Stati = new ConcurrentDictionary<Guid, Status>();
+    internal static ConcurrentDictionary<Guid, Engine> Engines = new ConcurrentDictionary<Guid, Engine>();
     private static Channel<KeyValuePair<Guid, string>> OutputChannel = Channel.CreateUnbounded<KeyValuePair<Guid, string>>();
     private static object lockobject = new object();
     private static bool IsConsuming = false;
@@ -30,16 +30,16 @@ internal static class StatusService
 
     public static ILogger<Engine> logger = ApplicationDebugLogging.CreateLogger<Engine>();
 
-    internal static void CreateStatus(Guid guid)
+    internal static void AddEngine(Engine engine)
     {
-        Stati.TryAdd(guid, new Status());
+        Engines.TryAdd(engine.Guid, engine);
         _ = Consume();
     }
 
-    internal static void DeleteStatus(Guid guid)
+    internal static void RemoveEngine(Guid guid)
     {
-        Stati.TryRemove(guid, out _);
-        if (!Stati.Any())
+        Engines.TryRemove(guid, out _);
+        if (!Engines.Any())
         {
             IsConsuming = false;
             tokenSource.Cancel();
@@ -74,14 +74,14 @@ internal static class StatusService
                 KeyValuePair<Guid, string> output;
                 if (OutputChannel.Reader.TryRead(out output))
                 {
-                    Status? status;
-                    if (Stati.TryGetValue(output.Key, out status))
+                    Engine? engine;
+                    if (Engines.TryGetValue(output.Key, out engine))
                     {
-                        ParseOutput(status, output.Value);
+                        ParseOutput(engine, output.Value);
                     }
                     else
                     {
-                        logger.LogWarning($"status {output.Key} not found");
+                        logger.LogWarning($"engine {output.Key} not found: {output.Value}");
                     }
                 }
             }
@@ -93,8 +93,9 @@ internal static class StatusService
         }
     }
 
-    private static void ParseOutput(Status status, string output)
+    private static void ParseOutput(Engine engine, string output)
     {
+        Status status = engine.Status;
         logger.LogDebug($"{status.EngineName} {output}");
         if (status._lineCount == 0)
         {
@@ -136,23 +137,13 @@ internal static class StatusService
                         }
                         if (ents.ContainsKey("multipv"))
                         {
-                            var info = status.Pvs.FirstOrDefault(f => f.multipv == ents["multipv"]);
-                            if (info == null)
-                            {
-                                info = new Pv(ents["multipv"]);
-                                status.Pvs.Add(info);
-                            }
+                            var info = status.GetPv(ents["multipv"]);
                             info.SetValues(ents);
                             info.SetMoves(infos[1].Split(" ").ToList());
                         }
                         else
                         {
-                            var info = status.Pvs.FirstOrDefault(f => f.multipv == 1);
-                            if (info == null)
-                            {
-                                info = new Pv(1);
-                                status.Pvs.Add(info);
-                            }
+                            var info = status.GetPv(ents["multipv"]);
                             info.SetValues(ents);
                             info.SetMoves(infos[1].Split(" ").ToList());
                         }
@@ -174,9 +165,9 @@ internal static class StatusService
                 }
                 if (status.BestMove != null)
                 {
+                    status.State = EngineState.BestMove;
                     status.OnMoveReady(new MoveEventArgs(status.BestMove));
                 }
-                status.State = EngineState.Ready;
             }
             else if (output == "readyok")
             {

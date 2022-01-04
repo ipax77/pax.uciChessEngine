@@ -106,9 +106,7 @@ public class GameAnalyzes
             await engine.IsReady();
             engine.Send("go");
             await Task.Delay(TimeSpan);
-            engine.Send("stop");
-            await engine.IsReady();
-            var info = engine.GetInfo();
+            var info = await engine.GetStopInfo();
 
             var rating = CollectInfo(info, startPos + i);
             if (rating != null)

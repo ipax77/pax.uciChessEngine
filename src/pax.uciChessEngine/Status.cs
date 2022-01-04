@@ -1,16 +1,12 @@
 ﻿using Microsoft.Extensions.Logging;
 using pax.chess;
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 
 namespace pax.uciChessEngine;
 
 public class Status
 {
-    private static Regex bestmoveRx = new Regex(@"^bestmove\s(.*)\sponder\s(.*)$");
-    private static Regex valueRx = new Regex(@"\s(\w+)\s(\-?\d+)");
-    private static Regex optionRx = new Regex(@"^option name ([^\s]+) type ([^\s]+) default ([^\s]+)");
-    private static Regex optionmmRx = new Regex(@"min ([\d]+) max ([\d]+)$");
-
     public EngineState State { get; internal set; }
     internal int _lineCount = 0;
 
@@ -21,7 +17,7 @@ public class Status
     public int Depth { get; internal set; }
     public EngineMove? CurrentMove { get; internal set; }
     public int CurrentMoveNumber { get; internal set; }
-    public List<Pv> Pvs { get; internal set; } = new List<Pv>();
+    public ConcurrentDictionary<int, Pv> Pvs { get; internal set; } = new ConcurrentDictionary<int, Pv>();
     public event EventHandler<StatusEventArgs>? StatusChanged;
     public event EventHandler<ErrorEventArgs>? ErrorRaised;
     public event EventHandler<MoveEventArgs>? MoveReady;
@@ -40,6 +36,20 @@ public class Status
     {
         MoveReady?.Invoke(this, e);
     }
+
+    internal Pv GetPv(int i)
+    {
+        Pv? pv;
+        if (Pvs.TryGetValue(i, out pv))
+        {
+            return pv;
+        } else
+        {
+            pv = new Pv(i);
+            Pvs.AddOrUpdate(i, pv, (key, value) => pv);
+            return pv;
+        }
+    }
 }
 
 public enum EngineState
@@ -48,6 +58,7 @@ public enum EngineState
     Ready,
     Calculating,
     Evaluating,
+    BestMove,
     Error,
 }
 
