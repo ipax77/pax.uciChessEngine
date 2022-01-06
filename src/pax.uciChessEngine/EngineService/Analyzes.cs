@@ -71,7 +71,7 @@ public sealed class Analyzes : IDisposable
 
     public async Task UpdateEngineGame()
     {
-        var moves = Game.State.Moves.Take(Game.ObserverMove).Select(s => s.EngineMove.ToString());
+        var moves = Game.ObserverState.Moves.Select(s => s.EngineMove.ToString());
         foreach (var engine in Engines)
         {
             engine.Send("stop");

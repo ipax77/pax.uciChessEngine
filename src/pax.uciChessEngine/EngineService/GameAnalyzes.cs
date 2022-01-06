@@ -151,7 +151,9 @@ public class GameAnalyzes
             }
             Move bestMove = pgnGame.State.Moves.Last();
             bestMove.Evaluation = bestEval;
+
             Rating rating = new Rating(gameMove, bestMove);
+            rating.BestLine.AddRange(info.PvInfos[0].Moves);
 
             for (int i = 1; i < info.PvInfos.Count; i++)
             {
@@ -168,6 +170,7 @@ public class GameAnalyzes
                 Move move = pgnGame.State.Moves.Last();
                 move.Evaluation = eval;
                 rating.RunnerMoves.Add(move);
+                rating.RunnerLines.Add(info.PvInfos[i].Moves);
             }
             return rating;
         }
@@ -179,7 +182,9 @@ public record Rating
 {
     public Move GameMove { get; init; }
     public Move BestMove { get; init; }
+    public List<EngineMove> BestLine { get; init; } = new List<EngineMove>();
     public List<Move> RunnerMoves { get; init; } = new List<Move>();
+    public List<List<EngineMove>> RunnerLines { get; init; } = new List<List<EngineMove>>();
 
     public Rating(Move gameMove, Move bestMove)
     {
