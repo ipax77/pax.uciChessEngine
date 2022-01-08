@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using pax.chess;
 
 namespace pax.uciChessEngine;
-public class EngineService
+public class EngineService : IDisposable
 {
     private List<Analyzes> Analyzes = new List<Analyzes>();
     private List<EngineGame> EngineGames = new List<EngineGame>();
@@ -25,7 +25,8 @@ public class EngineService
 
     public void UpdateEngines()
     {
-        AvailableEngines = _configuration.GetSection("ChessEngines").GetChildren().ToDictionary(x => x.Key, x => x.Value);
+        // todo correct order !?
+        AvailableEngines = _configuration.GetSection("ChessEngines").GetChildren().Reverse().ToDictionary(x => x.Key, x => x.Value);
     }
 
     public List<Analyzes> GetAnalyzes() => Analyzes;
@@ -92,5 +93,11 @@ public class EngineService
     {
         GameAnalyzis.Remove(gameAnalyzes);
         return;
+    }
+
+    public void Dispose()
+    {
+        Analyzes.ForEach(x => x.Dispose());
+        EngineGames.ForEach(x => x.Dispose());
     }
 }

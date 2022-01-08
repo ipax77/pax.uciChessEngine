@@ -18,6 +18,7 @@ public sealed class Analyzes : IDisposable
     private object lockobject = new object();
     private bool InfoUpdateRunning = false;
     public int CpuCoresUsed => Engines.Sum(s => s.Threads());
+    public bool isPaused { get; private set; } = false;
 
     private void OnEngineInfoAvailable(List<EngineInfo> infos)
     {
@@ -39,8 +40,8 @@ public sealed class Analyzes : IDisposable
 
     public void RemoveEngine(Engine engine)
     {
-        engine.Dispose();
         Engines.Remove(engine);
+        engine.Dispose();
     }
 
     private async Task InitEngine(Engine engine)
@@ -58,19 +59,52 @@ public sealed class Analyzes : IDisposable
         await engine.IsReady();
     }
 
+    public async Task ChangePvLine(Engine engine, bool upOrDown)
+    {
+        var pvOption = engine.Status.Options.FirstOrDefault(f => f.Name == "MultiPV");
+        if (pvOption != null)
+        {
+            int PvLines = (int)pvOption.Value;
+            if (upOrDown)
+            {
+                PvLines++;
+            }
+            else
+            {
+                PvLines = Math.Max(1, PvLines - 1);
+            }
+            if (PvLines != (int)pvOption.Value)
+            {
+                engine.Send("stop");
+                await engine.IsReady();
+                engine.Status.Pvs.Clear();
+                await SetEngineOption(engine, "Threads", PvLines);
+                await SetEngineOption(engine, "MultiPV", PvLines);
+                engine.Send("go");
+            }
+        }
+    }
+
     public void Pause()
     {
         TokenSource?.Cancel();
         Engines.ForEach(f => f.Send("stop"));
+        isPaused = true;
     }
 
     public void Resume()
     {
+        isPaused = false;
         _ = UpdateEngineGame();
     }
 
     public async Task UpdateEngineGame()
     {
+        if (isPaused)
+        {
+            return;
+        }
+
         var moves = Game.ObserverState.Moves.Select(s => s.EngineMove.ToString());
         foreach (var engine in Engines)
         {

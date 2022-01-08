@@ -94,29 +94,43 @@ public class GameAnalyzes
         engine.SetOption("MultiPV", Pvs);
         await engine.IsReady();
 
-        for (int i = 0; i < moves.Count(); i++)
+        try
         {
-            var move = moves.ElementAt(i);
-            if (token.IsCancellationRequested)
+            for (int i = 0; i < moves.Count(); i++)
             {
-                engine.Dispose();
-                return;
-            }
-            engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Take(startPos + i).Select(s => s.EngineMove.ToString()))}");
-            await engine.IsReady();
-            engine.Send("go");
-            await Task.Delay(TimeSpan);
-            var info = await engine.GetStopInfo();
+                var move = moves.ElementAt(i);
+                if (token.IsCancellationRequested)
+                {
+                    engine.Dispose();
+                    return;
+                }
+                engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Take(startPos + i).Select(s => s.EngineMove.ToString()))}");
+                await engine.IsReady();
+                engine.Status.Pvs.Clear();
+                engine.Send("go");
+                await Task.Delay(TimeSpan, token);
+                var info = await engine.GetStopInfo();
 
-            var rating = CollectInfo(info, startPos + i);
-            if (rating != null)
-            {
-                Ratings.AddOrUpdate(startPos + i, rating, (key, value) => rating);
-                InfoChannel.Writer.TryWrite(rating);
+                var rating = CollectInfo(info, startPos + i);
+                if (rating != null)
+                {
+                    Ratings.AddOrUpdate(startPos + i, rating, (key, value) => rating);
+                    InfoChannel.Writer.TryWrite(rating);
+                }
+                Interlocked.Increment(ref _Done);
             }
-            Interlocked.Increment(ref _Done);
         }
-        engine.Dispose();
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            logger.LogError($"chunk analyze failed: {ex.Message}");
+        }
+        finally
+        {
+            engine.Dispose();
+        }
     }
 
     private Rating? CollectInfo(EngineInfo? info, int halfMove)

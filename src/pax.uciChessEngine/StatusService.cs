@@ -96,7 +96,7 @@ internal static class StatusService
     private static void ParseOutput(Engine engine, string output)
     {
         Status status = engine.Status;
-        logger.LogDebug($"{status.EngineName} {output}");
+        // logger.LogDebug($"{status.EngineName} {output}");
         if (status._lineCount == 0)
         {
             status.EngineName = output;
