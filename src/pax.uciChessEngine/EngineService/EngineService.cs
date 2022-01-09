@@ -71,9 +71,24 @@ public class EngineService : IDisposable
         {
             return null;
         }
-        EngineGame engineGame = new EngineGame(whiteEngine, blackEngine, game, desc);
+        EngineGameOptions options = new EngineGameOptions()
+        {
+            WhiteEngineName = whiteEngine.Name,
+            BlackEngineName = blackEngine.Name,
+            WhiteEngine = new KeyValuePair<string, string>(whiteEngine.Name, whiteEngine.Binary),
+            BlackEngine = new KeyValuePair<string, string>(blackEngine.Name, blackEngine.Binary)
+        };
+
+        EngineGame engineGame = new EngineGame(game, options);
         EngineGames.Add(engineGame);
         return engineGame;
+    }
+
+    public void SetEngineGameOptions(EngineGame engineGame, EngineGameOptions options)
+    {
+        options.WhiteEngine = new KeyValuePair<string, string>(options.WhiteEngineName, AvailableEngines[options.WhiteEngineName]);
+        options.BlackEngine = new KeyValuePair<string, string>(options.BlackEngineName, AvailableEngines[options.BlackEngineName]);
+        engineGame.SetOptions(options);
     }
 
     public void DeleteEngineGame(EngineGame engineGame)

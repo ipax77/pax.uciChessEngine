@@ -8,8 +8,6 @@ namespace pax.uciChessEngine;
 public class Status
 {
     public EngineState State { get; internal set; }
-    internal int _lineCount = 0;
-
     public string EngineName { get; internal set; } = "unknown";
     internal List<Option> Options { get; private set; } = new List<Option>();
     public EngineMove? BestMove { get; internal set; }

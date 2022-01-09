@@ -32,6 +32,7 @@ public sealed class Engine : IDisposable
         Guid = Guid.NewGuid();
         Name = engineName;
         Binary = engineBinary;
+        Status.EngineName = Name;
         StatusService.AddEngine(this);
     }
 
@@ -56,11 +57,11 @@ public sealed class Engine : IDisposable
         engineProcess.StartInfo = processStartInfo;
 
         engineProcess.OutputDataReceived += new DataReceivedEventHandler(HandleOutputData);
-        // engineProcess.ErrorDataReceived += new DataReceivedEventHandler(HandleErrorData);
+        engineProcess.ErrorDataReceived += new DataReceivedEventHandler(HandleErrorData);
 
         engineProcess.Start();
         engineProcess.BeginOutputReadLine();
-        // engineProcess.BeginErrorReadLine();
+        engineProcess.BeginErrorReadLine();
 
 
         logger.LogDebug($"{Guid} {Name} started.");
@@ -85,9 +86,11 @@ public sealed class Engine : IDisposable
 
     public void Stop()
     {
-        Send("quit");
-        engineProcess?.WaitForExit(3000);
-
+        if (engineProcess != null && !engineProcess.HasExited)
+        {
+            Send("quit");
+            engineProcess?.WaitForExit(3000);
+        }
         logger.LogInformation($"engine {Name} {Guid} quit.");
         engineProcess?.Close();
         engineProcess?.Dispose();
