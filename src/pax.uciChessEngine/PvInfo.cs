@@ -37,11 +37,7 @@ public record PvInfo
         }
         for (int i = 0; i < pvMoves.Count; i++)
         {
-            var move = Map.GetEngineMove(pvMoves[i]);
-            if (move != null)
-            {
-                Moves.Add(move);
-            }
+            Moves.Add(Map.GetValidEngineMove(pvMoves[i]));
         }
     }
 

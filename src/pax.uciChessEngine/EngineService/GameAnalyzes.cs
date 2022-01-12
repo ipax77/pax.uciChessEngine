@@ -14,14 +14,13 @@ namespace pax.uciChessEngine;
 public class GameAnalyzes
 {
     public Game Game { get; private set; }
-    public ConcurrentDictionary<int, Rating> Ratings = new ConcurrentDictionary<int, Rating>();
     private KeyValuePair<string, string> Engine;
     private int _Done;
     public int Done => _Done;
     private TimeSpan TimeSpan;
     private int Pvs;
     private ILogger<Engine> logger => StatusService.logger;
-    private Channel<Rating> InfoChannel = Channel.CreateUnbounded<Rating>();
+    private Channel<Variation> InfoChannel = Channel.CreateUnbounded<Variation>();
 
     public GameAnalyzes(Game game, KeyValuePair<string, string> engine)
     {
@@ -29,7 +28,7 @@ public class GameAnalyzes
         Engine = engine;
     }
 
-    public async IAsyncEnumerable<Rating> Analyze([EnumeratorCancellation] CancellationToken token, TimeSpan timespan = new TimeSpan(), int pvs = 2, int threads = 0)
+    public async IAsyncEnumerable<Variation> Analyze([EnumeratorCancellation] CancellationToken token, TimeSpan timespan = new TimeSpan(), int pvs = 2, int threads = 0)
     {
         if (threads == 0)
         {
@@ -44,14 +43,14 @@ public class GameAnalyzes
         int chunkSize = Game.State.Moves.Count / threads;
         var chunks = Game.State.Moves.Chunk(chunkSize);
 
-        InfoChannel = Channel.CreateUnbounded<Rating>();
+        InfoChannel = Channel.CreateUnbounded<Variation>();
         _ = ProduceRatings(chunks, token);
 
         while (await InfoChannel.Reader.WaitToReadAsync(token))
         {
-            if (InfoChannel.Reader.TryRead(out Rating? rating))
+            if (InfoChannel.Reader.TryRead(out Variation? variation))
             {
-                yield return rating;
+                yield return variation;
             }
         }
     }
@@ -111,12 +110,8 @@ public class GameAnalyzes
                 await Task.Delay(TimeSpan, token);
                 var info = await engine.GetStopInfo();
 
-                var rating = CollectInfo(info, startPos + i);
-                if (rating != null)
-                {
-                    Ratings.AddOrUpdate(startPos + i, rating, (key, value) => rating);
-                    InfoChannel.Writer.TryWrite(rating);
-                }
+                GetVariations(info, startPos + i);
+
                 Interlocked.Increment(ref _Done);
             }
         }
@@ -130,6 +125,53 @@ public class GameAnalyzes
         finally
         {
             engine.Dispose();
+        }
+    }
+
+    private void GetVariations(EngineInfo? info, int halfMove)
+    {
+        if (info != null && info.PvInfos.Any())
+        {
+            Game pgnGame = new Game();
+            for (int i = 0; i < halfMove; i++)
+            {
+                var iresult = pgnGame.Move(Game.State.Moves[i].EngineMove);
+                if (iresult != MoveState.Ok)
+                {
+                    logger.LogError($"enginemove failed: {Game.State.Moves[i].EngineMove}");
+                    return;
+                }
+            }
+
+            foreach (var pv in info.PvInfos)
+            {
+                Variation variation = new Variation(halfMove);
+                variation.Evaluation = new Evaluation(pv.Score, pv.Mate, halfMove % 2 != 0);
+                variation.Pv = pv.MultiPv;
+                // Game pvGame = new Game(pgnGame);
+                Game pvGame = new Game();
+                for (int i = 0; i < halfMove; i++)
+                {
+                    var iresult = pvGame.Move(Game.State.Moves[i].EngineMove);
+                    if (iresult != MoveState.Ok)
+                    {
+                        logger.LogError($"enginemove failed: {Game.State.Moves[i].EngineMove}");
+                        return;
+                    }
+                }
+
+                for (int i = 0; i < pv.Moves.Count; i++)
+                {
+                    var rresult = pvGame.Move(pv.Moves[i]);
+                    if (rresult != MoveState.Ok)
+                    {
+                        logger.LogError($"enginemove failed: {pv.Moves[i]}");
+                        break;
+                    }
+                    variation.Moves.Add(pvGame.State.Moves.Last());
+                }
+                InfoChannel.Writer.TryWrite(variation);
+            }
         }
     }
 
