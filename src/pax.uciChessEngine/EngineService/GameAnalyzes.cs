@@ -100,8 +100,7 @@ public class GameAnalyzes
                 var move = moves.ElementAt(i);
                 if (token.IsCancellationRequested)
                 {
-                    engine.Dispose();
-                    return;
+                    break;
                 }
                 engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Take(startPos + i).Select(s => s.EngineMove.ToString()))}");
                 await engine.IsReady();
