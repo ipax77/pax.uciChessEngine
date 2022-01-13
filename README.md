@@ -13,6 +13,9 @@ You can install it with the Package Manager in your IDE or alternatively using t
 dotnet add package pax.uciChessEngine
 ```
 ## Usage
+
+Sample Project [pax.BlazorChess](https://github.com/ipax77/pax.BlazorChess)
+
 ```csharp
 Engine engine = new Engine("EngineName", @"path\to\engine\binary");
 engine.Start();
