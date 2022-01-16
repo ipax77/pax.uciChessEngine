@@ -94,6 +94,7 @@ public sealed class Engine : IDisposable
         logger.LogInformation($"engine {Name} {Guid} quit.");
         engineProcess?.Close();
         engineProcess?.Dispose();
+        engineProcess = null;
     }
 
     public void Send(string cmd)

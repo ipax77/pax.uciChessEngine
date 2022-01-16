@@ -189,6 +189,7 @@ public partial class EngineGame : IDisposable
             WhiteEngine.Dispose();
             BlackEngine.Dispose();
         }
+        Playing = false;
     }
 
     public void Dispose()
