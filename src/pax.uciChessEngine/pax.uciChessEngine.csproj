@@ -9,11 +9,11 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/ipax77/pax.uciChessEngine</RepositoryUrl>
     <PackageTags>chess;uci;universal chess interface;engine</PackageTags>
-    <AssemblyVersion>0.5.4.0</AssemblyVersion>
+    <AssemblyVersion>0.5.5.0</AssemblyVersion>
     <Owners>Philipp Hetzner</Owners>
     <Authors>Philipp Hetzner</Authors>
-    <Version>0.5.4</Version>
-	  <FileVersion>0.5.4.0</FileVersion>
+    <Version>0.5.5</Version>
+	  <FileVersion>0.5.5.0</FileVersion>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>    
   </PropertyGroup>
