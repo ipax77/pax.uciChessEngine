@@ -19,6 +19,9 @@ public sealed class Engine : IDisposable
 
     public Status Status { get; private set; } = new Status();
 
+    private readonly SemaphoreSlim semaphore = new(1, 1);
+    private EventWaitHandle readyEwh = new(false, EventResetMode.ManualReset);
+    private EventWaitHandle infoEwh = new(false, EventResetMode.ManualReset);
 
     public int Threads()
     {
@@ -40,6 +43,7 @@ public sealed class Engine : IDisposable
         Binary = engineBinary;
         Status.EngineName = Name;
         StatusService.AddEngine(this);
+
     }
 
     public void Start()
@@ -143,34 +147,25 @@ public sealed class Engine : IDisposable
 
     public async Task<bool> IsReady(int fs = 40)
     {
-        CancellationTokenSource cts = new();
-        Status.StatusChanged += (o, e) =>
-        {
-            cts.Cancel();
-        };
+        await semaphore.WaitAsync().ConfigureAwait(false);
+        readyEwh = new(false, EventResetMode.ManualReset);
+        EventHandler<StatusEventArgs> readyEvent = (s, e) => { readyEwh.Set(); };
+        Status.StatusChanged += readyEvent;
 
         Send("isready");
         try
         {
-            while (!cts.IsCancellationRequested)
-            {
-                await Task.Delay(100, cts.Token).ConfigureAwait(false);
-                fs--;
-                if (fs < 0)
-                {
-                    Logger.EngineError($"{EngineGuid} {Name} failed waiting for isready.");
-                    return false;
-                }
-            }
+            return readyEwh.WaitOne(fs * 100);
         }
         catch (OperationCanceledException)
         {
         }
         finally
         {
-            cts.Dispose();
+            semaphore.Release();
+            Status.StatusChanged -= readyEvent;
         }
-        return true;
+        return false;
     }
 
     public EngineInfo GetInfo()
@@ -192,29 +187,25 @@ public sealed class Engine : IDisposable
             return info1;
         }
 
-        CancellationTokenSource cts = new();
-        Status.MoveReady += (o, e) =>
-        {
-            cts.Cancel();
-        };
+        await semaphore.WaitAsync().ConfigureAwait(false);
+        infoEwh = new(false, EventResetMode.ManualReset);
+        EventHandler<MoveEventArgs> infoEvent = (s, e) => { infoEwh.Set(); };
+        Status.MoveReady += infoEvent;
+        bool success = false;
         Send("stop");
         try
         {
-            while (!cts.IsCancellationRequested)
-            {
-                await Task.Delay(100, cts.Token).ConfigureAwait(false);
-                fs--;
-                if (fs < 0)
-                {
-                    Logger.EngineError($"{EngineGuid} {Name} failed waiting for bestmove.");
-                    return null;
-                }
-            }
+            success = infoEwh.WaitOne(fs * 100);
         }
         catch (OperationCanceledException) { }
         finally
         {
-            cts.Dispose();
+            semaphore.Release();
+            Status.MoveReady -= infoEvent;
+        }
+        if (!success)
+        {
+            Logger.EngineError($"{EngineGuid} failed waiting for info");
         }
         var info2 = GetInfo();
         Status.Pvs.Clear();
@@ -228,6 +219,9 @@ public sealed class Engine : IDisposable
 
     public void Dispose()
     {
+        semaphore.Dispose();
+        readyEwh.Dispose();
+        infoEwh.Dispose();
         if (engineProcess != null)
         {
             Stop();

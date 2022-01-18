@@ -33,8 +33,8 @@ public sealed class Analyzes : IDisposable
         {
             throw new ArgumentNullException(nameof(engine));
         }
-        await InitEngine(engine).ConfigureAwait(false);
         Engines.Add(engine);
+        await InitEngine(engine).ConfigureAwait(false);
     }
 
     public void RemoveEngine(Engine engine)
@@ -55,7 +55,9 @@ public sealed class Analyzes : IDisposable
             await engine.IsReady().ConfigureAwait(false);
             await engine.GetOptions().ConfigureAwait(false);
             await engine.SetOption("Threads", 2).ConfigureAwait(false);
+            await engine.IsReady().ConfigureAwait(false);
             await engine.SetOption("MultiPV", 2).ConfigureAwait(false);
+            await engine.IsReady().ConfigureAwait(false);
         }
     }
 

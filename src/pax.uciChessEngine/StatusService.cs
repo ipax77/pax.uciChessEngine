@@ -90,7 +90,7 @@ internal static class StatusService
     private static void ParseOutput(Engine engine, string output)
     {
         Status status = engine.Status;
-        logger.EnginePong($"{status.EngineName} {output}");
+        logger.EnginePong($"{engine.EngineGuid} {output}");
 
         if (output.StartsWith("info ", StringComparison.Ordinal))
         {
