@@ -1,23 +1,32 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using pax.chess;
+using System.Diagnostics.CodeAnalysis;
 
 namespace pax.uciChessEngine;
-public class EngineService : IDisposable
+[SuppressMessage(
+    "Usage", "CA1024:Use properties where appropriate",
+    Justification = "Caller is not allowed to change the lists")]
+[SuppressMessage(
+    "Usage", "CA2000:Dispose objects before losing scope",
+    Justification = "the engine is transfered to another object that handles the dispose")]
+public sealed class EngineService : IDisposable
 {
-    private List<Analyzes> Analyzes = new List<Analyzes>();
-    private List<EngineGame> EngineGames = new List<EngineGame>();
-    private List<GameAnalyzes> GameAnalyzis = new List<GameAnalyzes>();
+    private readonly List<Analyzes> Analyzes = new();
+    private readonly List<EngineGame> EngineGames = new();
+    private readonly List<GameAnalyzes> GameAnalyzis = new();
 
     public Dictionary<string, string> AvailableEngines { get; private set; } = new Dictionary<string, string>();
-    private IConfiguration _configuration;
+    private readonly IConfiguration _configuration;
 
     public int CpuCoresTotal { get; private set; }
     public int CpuCoresUsed => EngineGames.Sum(s => s.CpuCoresUsed) + Analyzes.Sum(s => s.CpuCoresUsed);
     public int CpuCoresAvailable => CpuCoresTotal - CpuCoresUsed;
+    private readonly ILogger<EngineService> logger;
 
     public EngineService(ILogger<EngineService> logger, IConfiguration configuration)
     {
+        this.logger = logger;
         _configuration = configuration;
         UpdateEngines();
         CpuCoresTotal = Environment.ProcessorCount;
@@ -29,16 +38,17 @@ public class EngineService : IDisposable
         AvailableEngines = _configuration.GetSection("ChessEngines").GetChildren().Reverse().ToDictionary(x => x.Key, x => x.Value);
     }
 
-    public List<Analyzes> GetAnalyzes() => Analyzes;
-    public List<EngineGame> GetEngineGames() => EngineGames;
-    public List<GameAnalyzes> GetGameAnalyses() => GameAnalyzis;
+    public ICollection<Analyzes> GetAnalyzes() => Analyzes;
+    public ICollection<EngineGame> GetEngineGames() => EngineGames;
+    public ICollection<GameAnalyzes> GetGameAnalyses() => GameAnalyzis;
 
     public async Task<Analyzes> CreateAnalyzes(Game game, string? fen = null)
     {
-        Analyzes analyzes = new Analyzes(game, fen);
+        Analyzes analyzes = new(game, fen);
         if (AvailableEngines.Any())
         {
-            await analyzes.AddEngine(new Engine(AvailableEngines.First().Key, AvailableEngines.First().Value));
+            Engine engine = new(AvailableEngines.First().Key, AvailableEngines.First().Value);
+            await analyzes.AddEngine(engine).ConfigureAwait(false);
 
         }
         Analyzes.Add(analyzes);
@@ -63,11 +73,13 @@ public class EngineService : IDisposable
         {
             whiteEngine = new Engine(AvailableEngines.First().Key, AvailableEngines.First().Value);
             blackEngine = new Engine(AvailableEngines.First().Key, AvailableEngines.First().Value);
-        } else if (AvailableEngines.Count > 1)
+        }
+        else if (AvailableEngines.Count > 1)
         {
             whiteEngine = new Engine(AvailableEngines.ElementAt(0).Key, AvailableEngines.ElementAt(0).Value);
             blackEngine = new Engine(AvailableEngines.ElementAt(1).Key, AvailableEngines.ElementAt(1).Value);
-        } else
+        }
+        else
         {
             return null;
         }
@@ -86,6 +98,14 @@ public class EngineService : IDisposable
 
     public void SetEngineGameOptions(EngineGame engineGame, EngineGameOptions options)
     {
+        if (engineGame == null)
+        {
+            throw new ArgumentNullException(nameof(engineGame));
+        }
+        if (options == null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
         options.WhiteEngine = new KeyValuePair<string, string>(options.WhiteEngineName, AvailableEngines[options.WhiteEngineName]);
         options.BlackEngine = new KeyValuePair<string, string>(options.BlackEngineName, AvailableEngines[options.BlackEngineName]);
         engineGame.SetOptions(options);
@@ -94,12 +114,12 @@ public class EngineService : IDisposable
     public void DeleteEngineGame(EngineGame engineGame)
     {
         EngineGames.Remove(engineGame);
-        engineGame.Dispose();
+        engineGame?.Dispose();
     }
 
     public GameAnalyzes CreateGameAnalyzes(Game game, string engineName)
     {
-        GameAnalyzes analyses = new GameAnalyzes(game, new KeyValuePair<string, string>(engineName, AvailableEngines[engineName]));
+        GameAnalyzes analyses = new(game, new KeyValuePair<string, string>(engineName, AvailableEngines[engineName]));
         GameAnalyzis.Add(analyses);
         return analyses;
     }

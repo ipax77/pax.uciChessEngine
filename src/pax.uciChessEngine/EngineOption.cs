@@ -1,5 +1,5 @@
 ﻿namespace pax.uciChessEngine;
-public record Option
+public record EngineOption
 {
     public string Name { get; init; }
     public string Type { get; init; }
@@ -7,9 +7,9 @@ public record Option
     public int Min { get; init; }
     public int Max { get; init; }
     public object Default { get; init; }
-    public List<string>? Vars { get; init; }
+    public ICollection<string>? Vars { get; init; }
 
-    public Option(string name, string type, object value, List<string>? vars = null, int min = 0, int max = 0)
+    public EngineOption(string name, string type, object value, ICollection<string>? vars = null, int min = 0, int max = 0)
     {
         Name = name;
         Type = type;
@@ -20,9 +20,9 @@ public record Option
         Max = max;
     }
 
-    public Option(Option option)
+    public EngineOption(EngineOption option)
     {
-        Name = option.Name;
+        Name = option?.Name ?? throw new ArgumentNullException(nameof(option));
         Type = option.Type;
         Value = option.Value;
         Default = option.Default;

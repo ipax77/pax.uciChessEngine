@@ -45,7 +45,10 @@ namespace pax.uciChessEngine.tests
             Assert.NotNull(info);
             var pv = info.PvInfos.FirstOrDefault();
             Assert.NotNull(pv);
-            Assert.True(pv.Score > 0);
+            if (pv != null)
+            {
+                Assert.True(pv.Score > 0);
+            }
 
             engine.Dispose();
         }
@@ -77,7 +80,7 @@ namespace pax.uciChessEngine.tests
 
             for (int i = 0; i < info.PvInfos.Count; i++)
             {
-                var pv = info.PvInfos[i];
+                var pv = info.PvInfos.ElementAt(i);
                 Assert.True(pv.Score > 0);
             }
             engine.Dispose();

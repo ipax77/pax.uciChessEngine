@@ -1,18 +1,24 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.Diagnostics;
-
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 namespace pax.uciChessEngine;
+
+[SuppressMessage(
+    "Usage", "CA1308:Normalize strings to uppercase",
+    Justification = "the engine option requires lower case")]
 public sealed class Engine : IDisposable
 {
-    public Guid Guid { get; private set; }
+    public Guid EngineGuid { get; private set; }
     private Process? engineProcess;
 
     public string Name { get; private set; }
     public string Binary { get; private set; }
 
-    ILogger<Engine> logger => StatusService.logger;
+    private static ILogger<Engine> Logger => StatusService.logger;
 
     public Status Status { get; private set; } = new Status();
+
 
     public int Threads()
     {
@@ -29,7 +35,7 @@ public sealed class Engine : IDisposable
 
     public Engine(string engineName, string engineBinary)
     {
-        Guid = Guid.NewGuid();
+        EngineGuid = Guid.NewGuid();
         Name = engineName;
         Binary = engineBinary;
         Status.EngineName = Name;
@@ -40,7 +46,7 @@ public sealed class Engine : IDisposable
     {
         if (!File.Exists(Binary))
         {
-            throw new Exception($"binary for {Name} not found: {Binary}");
+            throw new FileNotFoundException($"binary for {Name} not found: {Binary}");
         }
         var processStartInfo = new ProcessStartInfo()
         {
@@ -53,7 +59,7 @@ public sealed class Engine : IDisposable
             CreateNoWindow = true,
         };
 
-        engineProcess = new Process();
+        engineProcess = new();
         engineProcess.StartInfo = processStartInfo;
 
         engineProcess.OutputDataReceived += new DataReceivedEventHandler(HandleOutputData);
@@ -63,8 +69,7 @@ public sealed class Engine : IDisposable
         engineProcess.BeginOutputReadLine();
         engineProcess.BeginErrorReadLine();
 
-
-        logger.LogDebug($"{Guid} {Name} started.");
+        Logger.EngineStarted($"{EngineGuid} {Name}");
         // SetDefaultConfig();
     }
 
@@ -80,7 +85,7 @@ public sealed class Engine : IDisposable
     {
         if (!String.IsNullOrEmpty(e.Data))
         {
-            logger.LogError($"engine {Name} error: {e.Data}");
+            Logger.EngineError($"engine {Name} error: {e.Data}");
         }
     }
 
@@ -91,7 +96,6 @@ public sealed class Engine : IDisposable
             Send("quit");
             engineProcess?.WaitForExit(3000);
         }
-        logger.LogInformation($"engine {Name} {Guid} quit.");
         engineProcess?.Close();
         engineProcess?.Dispose();
         engineProcess = null;
@@ -103,18 +107,18 @@ public sealed class Engine : IDisposable
         {
             engineProcess.StandardInput.WriteLine(cmd);
             engineProcess.StandardInput.Flush();
-            logger.LogDebug($"{Guid} {Name} ping {cmd}");
+            Logger.EnginePing($"{EngineGuid} {Name} ping {cmd}");
         }
     }
 
-    public async Task<List<Option>> GetOptions()
+    public async Task<List<EngineOption>> GetOptions()
     {
         Send("uci");
-        await IsReady();
-        return new List<Option>(Status.Options);
+        await IsReady().ConfigureAwait(false);
+        return new List<EngineOption>(Status.Options);
     }
 
-    public void SetOption(string name, object value)
+    public async Task SetOption(string name, object value)
     {
         var myoption = Status.Options.FirstOrDefault(f => f.Name == name);
         if (myoption != null)
@@ -123,22 +127,23 @@ public sealed class Engine : IDisposable
             string? svalue = myoption.Value.ToString();
             if (svalue != null)
             {
-                Send($"setoption name {myoption.Name} value {svalue.ToString().ToLower()}");
+                Send($"setoption name {myoption.Name} value {svalue.ToString().ToLower(CultureInfo.InvariantCulture)}");
             }
             else
             {
                 Send($"setoption name {myoption.Name} value {myoption.Value}");
             }
-            logger.LogDebug($"{Guid} {Name} setting option {myoption.Name} to {myoption.Value}");
-        } else
-        {
-            logger.LogWarning($"{Guid} {Name} option {name} not found.");
         }
+        else
+        {
+            Logger.EngineWarning($"{EngineGuid} {Name} option {name} not found.");
+        }
+        await IsReady().ConfigureAwait(false);
     }
 
     public async Task<bool> IsReady(int fs = 40)
     {
-        CancellationTokenSource cts = new CancellationTokenSource();
+        CancellationTokenSource cts = new();
         Status.StatusChanged += (o, e) =>
         {
             cts.Cancel();
@@ -149,11 +154,11 @@ public sealed class Engine : IDisposable
         {
             while (!cts.IsCancellationRequested)
             {
-                await Task.Delay(100, cts.Token);
+                await Task.Delay(100, cts.Token).ConfigureAwait(false);
                 fs--;
                 if (fs < 0)
                 {
-                    logger.LogError($"{Guid} {Name} failed waiting for isready.");
+                    Logger.EngineError($"{EngineGuid} {Name} failed waiting for isready.");
                     return false;
                 }
             }
@@ -161,15 +166,19 @@ public sealed class Engine : IDisposable
         catch (OperationCanceledException)
         {
         }
+        finally
+        {
+            cts.Dispose();
+        }
         return true;
     }
 
     public EngineInfo GetInfo()
     {
-        List<PvInfo> pvInfos = new List<PvInfo>();
+        List<PvInfo> pvInfos = new();
         foreach (var pv in Status.Pvs.Values)
         {
-            pvInfos.Add(new PvInfo(pv.multipv, pv.GetValues(), pv.GetMoves()));
+            pvInfos.Add(new PvInfo(pv.Multipv, pv.GetValues(), pv.GetMoves()));
         }
         return new EngineInfo(Name, pvInfos);
     }
@@ -182,8 +191,8 @@ public sealed class Engine : IDisposable
             Status.Pvs.Clear();
             return info1;
         }
-        
-        CancellationTokenSource cts = new CancellationTokenSource();
+
+        CancellationTokenSource cts = new();
         Status.MoveReady += (o, e) =>
         {
             cts.Cancel();
@@ -193,24 +202,28 @@ public sealed class Engine : IDisposable
         {
             while (!cts.IsCancellationRequested)
             {
-                await Task.Delay(100, cts.Token);
+                await Task.Delay(100, cts.Token).ConfigureAwait(false);
                 fs--;
                 if (fs < 0)
                 {
-                    logger.LogError($"{Guid} {Name} failed waiting for bestmove.");
+                    Logger.EngineError($"{EngineGuid} {Name} failed waiting for bestmove.");
                     return null;
                 }
             }
         }
         catch (OperationCanceledException) { }
+        finally
+        {
+            cts.Dispose();
+        }
         var info2 = GetInfo();
         Status.Pvs.Clear();
         return info2;
     }
 
-    private void HandleOutput(string info, bool error = false)
+    private void HandleOutput(string info)
     {
-        StatusService.HandleOutput(Guid, info);
+        StatusService.HandleOutput(EngineGuid, info);
     }
 
     public void Dispose()
@@ -219,6 +232,6 @@ public sealed class Engine : IDisposable
         {
             Stop();
         }
-        StatusService.RemoveEngine(Guid);
+        StatusService.RemoveEngine(EngineGuid);
     }
 }

@@ -9,9 +9,9 @@ public record EngineInfo
     public int Evaluation { get; init; }
     public int Mate { get; init; }
     public int Depth { get; init; }
-    public List<PvInfo> PvInfos { get; init; }
+    public ICollection<PvInfo> PvInfos { get; init; }
 
-    public EngineInfo(string engineName, List<PvInfo> pvInfos)
+    public EngineInfo(string engineName, ICollection<PvInfo> pvInfos)
     {
         EngineName = engineName;
         PvInfos = pvInfos;
@@ -22,12 +22,12 @@ public record EngineInfo
             Mate = pv1.Mate;
             if (pv1.Moves.Count > 1)
             {
-                BestMove = pv1.Moves[0];
-                Ponder = pv1.Moves[1];
+                BestMove = pv1.Moves.ElementAt(0);
+                Ponder = pv1.Moves.ElementAt(1);
             }
             else if (pv1.Moves.Count > 0)
             {
-                BestMove = pv1.Moves[0];
+                BestMove = pv1.Moves.ElementAt(0);
             }
             Depth = pv1.Depth;
         }

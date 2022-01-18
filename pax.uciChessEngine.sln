@@ -7,6 +7,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{51B631B5-7D6
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "pax.uciChessEngine", "src\pax.uciChessEngine\pax.uciChessEngine.csproj", "{9039D4E3-9FBF-4395-B376-C47C692DB3E1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "pax.uciChessEngine.tests", "pax.uciChessEngine.tests\pax.uciChessEngine.tests.csproj", "{624C2962-F793-4D31-8CC7-E6B650A7F3D2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,6 +22,10 @@ Global
 		{9039D4E3-9FBF-4395-B376-C47C692DB3E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9039D4E3-9FBF-4395-B376-C47C692DB3E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9039D4E3-9FBF-4395-B376-C47C692DB3E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{624C2962-F793-4D31-8CC7-E6B650A7F3D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{624C2962-F793-4D31-8CC7-E6B650A7F3D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{624C2962-F793-4D31-8CC7-E6B650A7F3D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{624C2962-F793-4D31-8CC7-E6B650A7F3D2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{9039D4E3-9FBF-4395-B376-C47C692DB3E1} = {51B631B5-7D62-4FD1-9B73-F3F93F9D6237}

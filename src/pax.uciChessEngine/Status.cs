@@ -1,7 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
-using pax.chess;
+﻿using pax.chess;
 using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
 
 namespace pax.uciChessEngine;
 
@@ -9,7 +7,7 @@ public class Status
 {
     public EngineState State { get; internal set; }
     public string EngineName { get; internal set; } = "unknown";
-    internal List<Option> Options { get; private set; } = new List<Option>();
+    internal List<EngineOption> Options { get; private set; } = new List<EngineOption>();
     public EngineMove? BestMove { get; internal set; }
     public EngineMove? Ponder { get; internal set; }
     public int Depth { get; internal set; }
@@ -28,7 +26,7 @@ public class Status
     internal virtual void OnErrorRaised(ErrorEventArgs e)
     {
         ErrorRaised?.Invoke(this, e);
-        
+
     }
     internal virtual void OnMoveReady(MoveEventArgs e)
     {
@@ -37,11 +35,11 @@ public class Status
 
     internal Pv GetPv(int i)
     {
-        Pv? pv;
-        if (Pvs.TryGetValue(i, out pv))
+        if (Pvs.TryGetValue(i, out Pv? pv))
         {
             return pv;
-        } else
+        }
+        else
         {
             pv = new Pv(i);
             Pvs.AddOrUpdate(i, pv, (key, value) => pv);
