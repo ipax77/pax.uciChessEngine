@@ -41,7 +41,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="6.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="6.0.0" />
-    <PackageReference Include="pax.chess" Version="0.5.5" />
+    <PackageReference Include="pax.chess" Version="0.6.0" />
   </ItemGroup>
 
 </Project>
