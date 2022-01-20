@@ -87,10 +87,16 @@ internal static class StatusService
         }
     }
 
-    private static void ParseOutput(Engine engine, string output)
+    internal static void ParseOutput(Engine engine, string output)
     {
         Status status = engine.Status;
         logger.EnginePong($"{engine.EngineGuid} {output}");
+
+        if (status.State == EngineState.None)
+        {
+            status.State = EngineState.Started;
+            status.OnStatusChanged(new StatusEventArgs() { State = EngineState.Started });
+        }
 
         if (output.StartsWith("info ", StringComparison.Ordinal))
         {

@@ -41,18 +41,18 @@ public sealed class EngineGame : IDisposable
         WhiteEngine = new Engine(Options.WhiteEngine.Key, Options.WhiteEngine.Value);
         BlackEngine = new Engine(Options.BlackEngine.Key, Options.BlackEngine.Value);
         await Task.Delay(1000).ConfigureAwait(false);
-        WhiteEngine.Start();
-        BlackEngine.Start();
+        await WhiteEngine.Start().ConfigureAwait(false);
+        await BlackEngine.Start().ConfigureAwait(false);
         await Task.Delay(1000).ConfigureAwait(false);
         await WhiteEngine.IsReady().ConfigureAwait(false);
         await BlackEngine.IsReady().ConfigureAwait(false);
 
-        WhiteEngine.Send("ucinewgame");
-        BlackEngine.Send("ucinewgame");
+        await WhiteEngine.Send("ucinewgame").ConfigureAwait(false);
+        await BlackEngine.Send("ucinewgame").ConfigureAwait(false);
         await WhiteEngine.IsReady(200).ConfigureAwait(false);
-        WhiteEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}");
+        await WhiteEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}").ConfigureAwait(false);
         await BlackEngine.IsReady(200).ConfigureAwait(false);
-        BlackEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}");
+        await BlackEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}").ConfigureAwait(false);
         await WhiteEngine.IsReady().ConfigureAwait(false);
         await BlackEngine.IsReady().ConfigureAwait(false);
         // Game.Time = new Time(whitetime, whiteincrement, blacktime, blackincrement);
@@ -75,9 +75,9 @@ public sealed class EngineGame : IDisposable
     {
         if (!IsGameOver())
         {
-            engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}");
+            await engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}").ConfigureAwait(false);
             await engine.IsReady().ConfigureAwait(false);
-            engine.Send($"go wtime {Convert.ToInt32(Game.Time.CurrentWhiteTime.TotalMilliseconds)} btime {Convert.ToInt32(Game.Time.CurrentBlackTime.TotalMilliseconds)} winc {Game.Time.WhiteIncrement.TotalMilliseconds} binc {Game.Time.BlackIncrement.TotalMilliseconds}");
+            await engine.Send($"go wtime {Convert.ToInt32(Game.Time.CurrentWhiteTime.TotalMilliseconds)} btime {Convert.ToInt32(Game.Time.CurrentBlackTime.TotalMilliseconds)} winc {Game.Time.WhiteIncrement.TotalMilliseconds} binc {Game.Time.BlackIncrement.TotalMilliseconds}").ConfigureAwait(false);
         }
         else if (WhiteEngine != null && BlackEngine != null)
         {

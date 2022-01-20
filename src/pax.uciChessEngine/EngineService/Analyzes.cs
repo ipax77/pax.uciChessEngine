@@ -51,7 +51,7 @@ public sealed class Analyzes : IDisposable
     {
         if (Engines.Contains(engine))
         {
-            engine.Start();
+            await engine.Start().ConfigureAwait(false);
             await engine.IsReady().ConfigureAwait(false);
             await engine.GetOptions().ConfigureAwait(false);
             await engine.SetOption("Threads", 2).ConfigureAwait(false);
@@ -83,12 +83,12 @@ public sealed class Analyzes : IDisposable
                 }
                 if (PvLines != (int)pvOption.Value)
                 {
-                    engine.Send("stop");
+                    await engine.Send("stop").ConfigureAwait(false);
                     await engine.IsReady().ConfigureAwait(false);
                     engine.Status.Pvs.Clear();
                     await engine.SetOption("Threads", PvLines).ConfigureAwait(false);
                     await engine.SetOption("MultiPV", PvLines).ConfigureAwait(false);
-                    engine.Send("go");
+                    await engine.Send("go").ConfigureAwait(false);
                 }
             }
         }
@@ -97,7 +97,7 @@ public sealed class Analyzes : IDisposable
     public void Pause()
     {
         TokenSource?.Cancel();
-        Engines.ToList().ForEach(f => f.Send("stop"));
+        Engines.ToList().ForEach(f => _ = f.Send("stop"));
         IsPaused = true;
     }
 
@@ -117,11 +117,11 @@ public sealed class Analyzes : IDisposable
         var moves = Game.ObserverState.Moves.Select(s => s.EngineMove.ToString());
         foreach (var engine in Engines)
         {
-            engine.Send("stop");
+            await engine.Send("stop").ConfigureAwait(false);
             await engine.IsReady().ConfigureAwait(false);
-            engine.Send($"position {(Fen == null ? "startpos" : $"fen {Fen}")} moves {String.Join(" ", moves)}");
+            await engine.Send($"position {(Fen == null ? "startpos" : $"fen {Fen}")} moves {String.Join(" ", moves)}").ConfigureAwait(false);
             await engine.IsReady().ConfigureAwait(false);
-            engine.Send("go");
+            await engine.Send("go").ConfigureAwait(false);
         }
         _ = UpdateEngineEval();
     }

@@ -78,12 +78,12 @@ public class GameAnalyzes
         }
         int startPos = moves.First().HalfMoveNumber;
         Engine engine = new(Engine.Key, Engine.Value);
-        engine.Start();
-        await engine.IsReady().ConfigureAwait(true);
-        await engine.GetOptions().ConfigureAwait(true);
-        await engine.IsReady().ConfigureAwait(true);
-        await engine.SetOption("Threads", Pvs).ConfigureAwait(true);
-        await engine.SetOption("MultiPV", Pvs).ConfigureAwait(true);
+        await engine.Start().ConfigureAwait(false);
+        await engine.IsReady().ConfigureAwait(false);
+        await engine.GetOptions().ConfigureAwait(false);
+        await engine.IsReady().ConfigureAwait(false);
+        await engine.SetOption("Threads", Pvs).ConfigureAwait(false);
+        await engine.SetOption("MultiPV", Pvs).ConfigureAwait(false);
 
         try
         {
@@ -94,12 +94,12 @@ public class GameAnalyzes
                 {
                     break;
                 }
-                engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Take(startPos + i).Select(s => s.EngineMove.ToString()))}");
-                await engine.IsReady().ConfigureAwait(true);
+                await engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Take(startPos + i).Select(s => s.EngineMove.ToString()))}").ConfigureAwait(false);
+                await engine.IsReady().ConfigureAwait(false);
                 engine.Status.Pvs.Clear();
-                engine.Send("go");
-                await Task.Delay(TimeSpan, token).ConfigureAwait(true);
-                var info = await engine.GetStopInfo().ConfigureAwait(true);
+                await engine.Send("go").ConfigureAwait(false);
+                await Task.Delay(TimeSpan, token).ConfigureAwait(false);
+                var info = await engine.GetStopInfo().ConfigureAwait(false);
 
                 GetVariations(info, startPos + i);
 

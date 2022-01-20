@@ -51,6 +51,7 @@ public class Status
 public enum EngineState
 {
     None,
+    Started,
     Ready,
     Calculating,
     Evaluating,

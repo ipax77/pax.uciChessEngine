@@ -2,6 +2,8 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text;
+
 namespace pax.uciChessEngine;
 
 [SuppressMessage(
@@ -20,6 +22,8 @@ public sealed class Engine : IDisposable
     public Status Status { get; private set; } = new Status();
 
     private readonly SemaphoreSlim semaphore = new(1, 1);
+    private readonly SemaphoreSlim sendSemaphore = new(1, 1);
+    private EventWaitHandle startEwh = new(false, EventResetMode.ManualReset);
     private EventWaitHandle readyEwh = new(false, EventResetMode.ManualReset);
     private EventWaitHandle infoEwh = new(false, EventResetMode.ManualReset);
 
@@ -46,7 +50,7 @@ public sealed class Engine : IDisposable
 
     }
 
-    public void Start()
+    public async Task<bool> Start()
     {
         if (!File.Exists(Binary))
         {
@@ -55,12 +59,15 @@ public sealed class Engine : IDisposable
         var processStartInfo = new ProcessStartInfo()
         {
             FileName = Binary,
+            Arguments = String.Empty,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
             WindowStyle = ProcessWindowStyle.Hidden,
             CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardInputEncoding = Encoding.UTF8,
         };
 
         engineProcess = new();
@@ -74,7 +81,32 @@ public sealed class Engine : IDisposable
         engineProcess.BeginErrorReadLine();
 
         Logger.EngineStarted($"{EngineGuid} {Name}");
+
+        Status.ErrorRaised += ErrorRaised;
         // SetDefaultConfig();
+
+        startEwh = new(false, EventResetMode.ManualReset);
+        EventHandler<StatusEventArgs> startEvent = (s, e) => { startEwh.Set(); };
+        Status.StatusChanged += startEvent;
+
+        await Send("isready").ConfigureAwait(false);
+        try
+        {
+            return startEwh.WaitOne(40 * 200);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            Status.StatusChanged -= startEvent;
+        }
+        return false;
+    }
+
+    private void ErrorRaised(object? sender, ErrorEventArgs e)
+    {
+        Logger.EngineError($"{EngineGuid} error: {e.Error}");
     }
 
     private void HandleOutputData(object sender, DataReceivedEventArgs e)
@@ -97,7 +129,7 @@ public sealed class Engine : IDisposable
     {
         if (engineProcess != null && !engineProcess.HasExited)
         {
-            Send("quit");
+            _ = Send("quit");
             engineProcess?.WaitForExit(3000);
         }
         engineProcess?.Close();
@@ -105,19 +137,30 @@ public sealed class Engine : IDisposable
         engineProcess = null;
     }
 
-    public void Send(string cmd)
+    public async Task Send(string cmd)
     {
         if (engineProcess != null)
         {
-            engineProcess.StandardInput.WriteLine(cmd);
-            engineProcess.StandardInput.Flush();
-            Logger.EnginePing($"{EngineGuid} {Name} ping {cmd}");
+            await sendSemaphore.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await engineProcess.StandardInput.WriteLineAsync(cmd).ConfigureAwait(false);
+                if (cmd != "quit")
+                {
+                    await engineProcess.StandardInput.FlushAsync().ConfigureAwait(false);
+                }
+                Logger.EnginePing($"{EngineGuid} {Name} ping {cmd}");
+            }
+            finally
+            {
+                sendSemaphore.Release();
+            }
         }
     }
 
     public async Task<List<EngineOption>> GetOptions()
     {
-        Send("uci");
+        await Send("uci").ConfigureAwait(false);
         await IsReady().ConfigureAwait(false);
         return new List<EngineOption>(Status.Options);
     }
@@ -131,11 +174,11 @@ public sealed class Engine : IDisposable
             string? svalue = myoption.Value.ToString();
             if (svalue != null)
             {
-                Send($"setoption name {myoption.Name} value {svalue.ToString().ToLower(CultureInfo.InvariantCulture)}");
+                await Send($"setoption name {myoption.Name} value {svalue.ToString().ToLower(CultureInfo.InvariantCulture)}").ConfigureAwait(false);
             }
             else
             {
-                Send($"setoption name {myoption.Name} value {myoption.Value}");
+                await Send($"setoption name {myoption.Name} value {myoption.Value}").ConfigureAwait(false);
             }
         }
         else
@@ -152,10 +195,10 @@ public sealed class Engine : IDisposable
         EventHandler<StatusEventArgs> readyEvent = (s, e) => { readyEwh.Set(); };
         Status.StatusChanged += readyEvent;
 
-        Send("isready");
+        await Send("isready").ConfigureAwait(false);
         try
         {
-            return readyEwh.WaitOne(fs * 100);
+            return readyEwh.WaitOne(fs * 200);
         }
         catch (OperationCanceledException)
         {
@@ -192,10 +235,10 @@ public sealed class Engine : IDisposable
         EventHandler<MoveEventArgs> infoEvent = (s, e) => { infoEwh.Set(); };
         Status.MoveReady += infoEvent;
         bool success = false;
-        Send("stop");
+        await Send("stop").ConfigureAwait(false);
         try
         {
-            success = infoEwh.WaitOne(fs * 100);
+            success = infoEwh.WaitOne(fs * 200);
         }
         catch (OperationCanceledException) { }
         finally
@@ -214,12 +257,16 @@ public sealed class Engine : IDisposable
 
     private void HandleOutput(string info)
     {
-        StatusService.HandleOutput(EngineGuid, info);
+        // StatusService.HandleOutput(EngineGuid, info);
+        StatusService.ParseOutput(this, info);
     }
 
     public void Dispose()
     {
+        Status.ErrorRaised -= ErrorRaised;
         semaphore.Dispose();
+        sendSemaphore.Dispose();
+        startEwh.Dispose();
         readyEwh.Dispose();
         infoEwh.Dispose();
         if (engineProcess != null)
