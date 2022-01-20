@@ -1,38 +1,34 @@
 ﻿using Microsoft.Extensions.Logging;
 using pax.chess;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
-using System.Threading.Tasks;
 
 namespace pax.uciChessEngine;
 
 internal static class StatusService
 {
-    internal static ConcurrentDictionary<Guid, Engine> Engines = new ConcurrentDictionary<Guid, Engine>();
-    private static Channel<KeyValuePair<Guid, string>> OutputChannel = Channel.CreateUnbounded<KeyValuePair<Guid, string>>();
-    private static object lockobject = new object();
-    private static bool IsConsuming = false;
-    private static CancellationTokenSource tokenSource = new CancellationTokenSource();
+    internal static ConcurrentDictionary<Guid, Engine> Engines = new();
+    private static readonly Channel<KeyValuePair<Guid, string>> OutputChannel = Channel.CreateUnbounded<KeyValuePair<Guid, string>>();
+    private static readonly object lockobject = new();
+    private static bool IsConsuming;
+    private static CancellationTokenSource tokenSource = new();
 
-    private static Regex bestmoveRx = new Regex(@"^bestmove\s(.*)\sponder\s(.*)$");
-    private static Regex valueRx = new Regex(@"\s(\w+)\s(\-?\d+)");
-    private static Regex optionNameRx = new Regex(@"option\s+name\s+([\d\w\s]+)\s+type");
-    private static Regex optionTypeRx = new Regex(@"\s+type\s+([^\s]+)");
-    private static Regex optionMinRx = new Regex(@"\s+min\s+([^\s]+)");
-    private static Regex optionMaxRx = new Regex(@"\s+max\s+([^\s]+)");
-    private static Regex optionDefaultRx = new Regex(@"\s+default\s+([^\s]+)");
-    private static Regex optionComboRx = new Regex(@"\s+var\s+([\d\w_-]+)");
+    private static readonly Regex bestmoveRx = new(@"^bestmove\s(.*)\sponder\s(.*)$");
+    private static readonly Regex valueRx = new(@"\s(\w+)\s(\-?\d+)");
+    private static readonly Regex optionNameRx = new(@"option\s+name\s+([\d\w\s]+)\s+type");
+    private static readonly Regex optionTypeRx = new(@"\s+type\s+([^\s]+)");
+    private static readonly Regex optionMinRx = new(@"\s+min\s+([^\s]+)");
+    private static readonly Regex optionMaxRx = new(@"\s+max\s+([^\s]+)");
+    private static readonly Regex optionDefaultRx = new(@"\s+default\s+([^\s]+)");
+    private static readonly Regex optionComboRx = new(@"\s+var\s+([\d\w_-]+)");
 
     public static ILogger<Engine> logger = ApplicationDebugLogging.CreateLogger<Engine>();
 
     internal static void AddEngine(Engine engine)
     {
-        Engines.TryAdd(engine.Guid, engine);
+        Engines.TryAdd(engine.EngineGuid, engine);
         _ = Consume();
     }
 
@@ -69,19 +65,17 @@ internal static class StatusService
 
         try
         {
-            while (await OutputChannel.Reader.WaitToReadAsync(tokenSource.Token))
+            while (await OutputChannel.Reader.WaitToReadAsync(tokenSource.Token).ConfigureAwait(false))
             {
-                KeyValuePair<Guid, string> output;
-                if (OutputChannel.Reader.TryRead(out output))
+                if (OutputChannel.Reader.TryRead(out KeyValuePair<Guid, string> output))
                 {
-                    Engine? engine;
-                    if (Engines.TryGetValue(output.Key, out engine))
+                    if (Engines.TryGetValue(output.Key, out Engine? engine))
                     {
                         ParseOutput(engine, output.Value);
                     }
                     else
                     {
-                        logger.LogWarning($"engine {output.Key} not found: {output.Value}");
+                        logger.EngineWarning($"engine {output.Key} not found: {output.Value}");
                     }
                 }
             }
@@ -93,14 +87,20 @@ internal static class StatusService
         }
     }
 
-    private static void ParseOutput(Engine engine, string output)
+    internal static void ParseOutput(Engine engine, string output)
     {
         Status status = engine.Status;
-        logger.LogDebug($"{status.EngineName} {output}");
+        logger.EnginePong($"{engine.EngineGuid} {output}");
 
-        if (output.StartsWith("info "))
+        if (status.State == EngineState.None)
         {
-            if (output.Contains("evaluation using"))
+            status.State = EngineState.Started;
+            status.OnStatusChanged(new StatusEventArgs() { State = EngineState.Started });
+        }
+
+        if (output.StartsWith("info ", StringComparison.Ordinal))
+        {
+            if (output.Contains("evaluation using", StringComparison.Ordinal))
             {
                 status.State = EngineState.Evaluating;
             }
@@ -120,10 +120,10 @@ internal static class StatusService
                 if (infos.Length == 2)
                 {
                     Match m = valueRx.Match(infos[0]);
-                    Dictionary<string, int> ents = new Dictionary<string, int>();
+                    Dictionary<string, int> ents = new();
                     while (m.Success)
                     {
-                        ents[m.Groups[1].Value] = int.Parse(m.Groups[2].Value);
+                        ents[m.Groups[1].Value] = int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
                         m = m.NextMatch();
                     }
                     if (ents.ContainsKey("multipv"))
@@ -142,7 +142,7 @@ internal static class StatusService
             }
             status.State = EngineState.Calculating;
         }
-        else if (output.StartsWith("bestmove "))
+        else if (output.StartsWith("bestmove ", StringComparison.Ordinal))
         {
             var match = bestmoveRx.Match(output);
             if (match.Success)
@@ -169,7 +169,7 @@ internal static class StatusService
         {
             status.OnErrorRaised(new ErrorEventArgs(output));
         }
-        else if (output.StartsWith("option"))
+        else if (output.StartsWith("option", StringComparison.Ordinal))
         {
             string name = String.Empty;
             int min = 0;
@@ -190,7 +190,7 @@ internal static class StatusService
             }
             else
             {
-                logger.LogWarning($"{status.EngineName} could not identify option: {output}");
+                logger.EngineWarning($"{status.EngineName} could not identify option: {output}");
                 return;
             }
 
@@ -204,16 +204,16 @@ internal static class StatusService
                 Match minMatch = optionMinRx.Match(output);
                 if (minMatch.Success)
                 {
-                    min = int.Parse(minMatch.Groups[1].Value);
+                    min = int.Parse(minMatch.Groups[1].Value, CultureInfo.InvariantCulture);
                 }
                 Match maxMatch = optionMaxRx.Match(output);
                 if (maxMatch.Success)
                 {
-                    max = int.Parse(maxMatch.Groups[1].Value);
+                    max = int.Parse(maxMatch.Groups[1].Value, CultureInfo.InvariantCulture);
                 }
                 Match defaultMatch = optionDefaultRx.Match(output);
                 {
-                    defaultValue = int.Parse(defaultMatch.Groups[1].Value);
+                    defaultValue = int.Parse(defaultMatch.Groups[1].Value, CultureInfo.InvariantCulture);
                     Value = defaultValue;
                 }
             }
@@ -253,7 +253,7 @@ internal static class StatusService
                     comboMatch = comboMatch.NextMatch();
                 }
             }
-            status.Options.Add(new Option(name, type, defaultValue, vars, min, max));
+            status.Options.Add(new EngineOption(name, type, defaultValue, vars, min, max));
         }
     }
 }

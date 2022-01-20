@@ -1,30 +1,24 @@
 ﻿using Microsoft.Extensions.Logging;
 using pax.chess;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace pax.uciChessEngine;
 
-public partial class EngineGame : IDisposable
+public sealed class EngineGame : IDisposable
 {
-    public ILogger<Engine> logger => StatusService.logger;
+    public static ILogger<Engine> Logger => StatusService.logger;
 
-    public Guid Guid = Guid.NewGuid();
+    public Guid EngineGameGuid { get; private set; } = Guid.NewGuid();
     public Engine? WhiteEngine { get; private set; }
     public Engine? BlackEngine { get; private set; }
     public Game Game { get; private set; }
     public event EventHandler<EngineMoveEventArgs>? EngineMoved;
-    public List<int> WhiteEvaluations { get; private set; } = new List<int>();
-    public List<int> BlackEvaluations { get; private set; } = new List<int>();
+    public ICollection<int> WhiteEvaluations { get; private set; } = new List<int>();
+    public ICollection<int> BlackEvaluations { get; private set; } = new List<int>();
     public int CpuCoresUsed => (WhiteEngine == null ? 0 : WhiteEngine.Threads()) + (BlackEngine == null ? 0 : BlackEngine.Threads());
     public EngineGameOptions Options { get; private set; }
-    public bool Playing { get; private set; } = false;
+    public bool Playing { get; private set; }
 
-
-    protected virtual void OnEngineMoved(EngineMoveEventArgs e)
+    private void OnEngineMoved(EngineMoveEventArgs e)
     {
         EngineMoved?.Invoke(this, e);
     }
@@ -46,29 +40,29 @@ public partial class EngineGame : IDisposable
         Game.Time = new Time(TimeSpan.FromSeconds(Options.TimeInSeconds), TimeSpan.FromSeconds(Options.IncrementInSeconds));
         WhiteEngine = new Engine(Options.WhiteEngine.Key, Options.WhiteEngine.Value);
         BlackEngine = new Engine(Options.BlackEngine.Key, Options.BlackEngine.Value);
-        await Task.Delay(1000);
-        WhiteEngine.Start();
-        BlackEngine.Start();
-        await Task.Delay(1000);
-        await WhiteEngine.IsReady();
-        await BlackEngine.IsReady();
+        await Task.Delay(1000).ConfigureAwait(false);
+        await WhiteEngine.Start().ConfigureAwait(false);
+        await BlackEngine.Start().ConfigureAwait(false);
+        await Task.Delay(1000).ConfigureAwait(false);
+        await WhiteEngine.IsReady().ConfigureAwait(false);
+        await BlackEngine.IsReady().ConfigureAwait(false);
 
-        WhiteEngine.Send("ucinewgame");
-        BlackEngine.Send("ucinewgame");
-        await WhiteEngine.IsReady(200);
-        WhiteEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}");
-        await BlackEngine.IsReady(200);
-        BlackEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}");
-        await WhiteEngine.IsReady();
-        await BlackEngine.IsReady();
+        await WhiteEngine.Send("ucinewgame").ConfigureAwait(false);
+        await BlackEngine.Send("ucinewgame").ConfigureAwait(false);
+        await WhiteEngine.IsReady(200).ConfigureAwait(false);
+        await WhiteEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}").ConfigureAwait(false);
+        await BlackEngine.IsReady(200).ConfigureAwait(false);
+        await BlackEngine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}").ConfigureAwait(false);
+        await WhiteEngine.IsReady().ConfigureAwait(false);
+        await BlackEngine.IsReady().ConfigureAwait(false);
         // Game.Time = new Time(whitetime, whiteincrement, blacktime, blackincrement);
 
-        await WhiteEngine.GetOptions();
-        await BlackEngine.GetOptions();
-        await WhiteEngine.IsReady();
-        await BlackEngine.IsReady();
-        WhiteEngine.SetOption("Threads", Options.Threads / 2);
-        BlackEngine.SetOption("Threads", Options.Threads / 2);
+        await WhiteEngine.GetOptions().ConfigureAwait(false);
+        await BlackEngine.GetOptions().ConfigureAwait(false);
+        await WhiteEngine.IsReady().ConfigureAwait(false);
+        await BlackEngine.IsReady().ConfigureAwait(false);
+        await WhiteEngine.SetOption("Threads", Options.Threads / 2).ConfigureAwait(false);
+        await BlackEngine.SetOption("Threads", Options.Threads / 2).ConfigureAwait(false);
 
         WhiteEngine.Status.MoveReady += WhiteMoveReady;
         BlackEngine.Status.MoveReady += BlackMoveReady;
@@ -81,11 +75,11 @@ public partial class EngineGame : IDisposable
     {
         if (!IsGameOver())
         {
-            engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}");
-            await engine.IsReady();
-            engine.Send($"go wtime {Convert.ToInt32(Game.Time.CurrentWhiteTime.TotalMilliseconds)} btime {Convert.ToInt32(Game.Time.CurrentBlackTime.TotalMilliseconds)} winc {Game.Time.WhiteIncrement.TotalMilliseconds} binc {Game.Time.BlackIncrement.TotalMilliseconds}");
+            await engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Select(s => Map.GetEngineMoveString(s)))}").ConfigureAwait(false);
+            await engine.IsReady().ConfigureAwait(false);
+            await engine.Send($"go wtime {Convert.ToInt32(Game.Time.CurrentWhiteTime.TotalMilliseconds)} btime {Convert.ToInt32(Game.Time.CurrentBlackTime.TotalMilliseconds)} winc {Game.Time.WhiteIncrement.TotalMilliseconds} binc {Game.Time.BlackIncrement.TotalMilliseconds}").ConfigureAwait(false);
         }
-        else
+        else if (WhiteEngine != null && BlackEngine != null)
         {
             OnEngineMoved(new EngineMoveEventArgs(WhiteEngine.Name, Map.GetEngineMove(Map.GetEngineMoveString(Game.State.Moves.Last())), Game.Time.LastMoveDuration, new EngineInfo(WhiteEngine.Name, new List<PvInfo>()), true));
             WhiteEngine.Stop();
@@ -101,6 +95,7 @@ public partial class EngineGame : IDisposable
             if (Game.Time.WhiteMoved())
             {
                 Game.Move(e.Move);
+                Game.State.Moves.Last().MoveTime = Game.Time.LastMoveDuration;
                 OnEngineMoved(new EngineMoveEventArgs(WhiteEngine.Name, e.Move, Game.Time.LastMoveDuration, info));
                 WhiteEvaluations.Add(info.Evaluation);
                 Go(BlackEngine);
@@ -122,6 +117,7 @@ public partial class EngineGame : IDisposable
             if (Game.Time.BlackMoved())
             {
                 Game.Move(e.Move);
+                Game.State.Moves.Last().MoveTime = Game.Time.LastMoveDuration;
                 OnEngineMoved(new EngineMoveEventArgs(BlackEngine.Name, e.Move, Game.Time.LastMoveDuration, info));
                 BlackEvaluations.Add(info.Evaluation);
                 Go(WhiteEngine);

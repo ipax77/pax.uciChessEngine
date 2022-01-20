@@ -13,11 +13,19 @@ public record PvInfo
     public int HashFull { get; init; }
     public int TbHits { get; init; }
     public int Time { get; init; }
-    public List<EngineMove> Moves { get; init; } = new List<EngineMove>();
+    public ICollection<EngineMove> Moves { get; init; } = new List<EngineMove>();
 
     public PvInfo() { }
-    public PvInfo(int pvNum, Dictionary<string, int> pvValues, List<string> pvMoves)
+    public PvInfo(int pvNum, Dictionary<string, int> pvValues, ICollection<string> pvMoves)
     {
+        if (pvValues == null)
+        {
+            throw new ArgumentNullException(nameof(pvValues));
+        }
+        if (pvMoves == null)
+        {
+            throw new ArgumentNullException(nameof(pvMoves));
+        }
         MultiPv = pvNum;
         foreach (var ent in pvValues)
         {
@@ -37,7 +45,7 @@ public record PvInfo
         }
         for (int i = 0; i < pvMoves.Count; i++)
         {
-            Moves.Add(Map.GetValidEngineMove(pvMoves[i]));
+            Moves.Add(Map.GetValidEngineMove(pvMoves.ElementAt(i)));
         }
     }
 

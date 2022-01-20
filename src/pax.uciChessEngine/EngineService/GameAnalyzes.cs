@@ -1,25 +1,19 @@
 ﻿using Microsoft.Extensions.Logging;
 using pax.chess;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading.Channels;
-using System.Threading.Tasks;
 
 namespace pax.uciChessEngine;
 
 public class GameAnalyzes
 {
     public Game Game { get; private set; }
-    private KeyValuePair<string, string> Engine;
+    private readonly KeyValuePair<string, string> Engine;
     private int _Done;
     public int Done => _Done;
     private TimeSpan TimeSpan;
     private int Pvs;
-    private ILogger<Engine> logger => StatusService.logger;
+    private static ILogger<Engine> Logger => StatusService.logger;
     private Channel<Variation> InfoChannel = Channel.CreateUnbounded<Variation>();
 
     public GameAnalyzes(Game game, KeyValuePair<string, string> engine)
@@ -46,7 +40,7 @@ public class GameAnalyzes
         InfoChannel = Channel.CreateUnbounded<Variation>();
         _ = ProduceRatings(chunks, token);
 
-        while (await InfoChannel.Reader.WaitToReadAsync(token))
+        while (await InfoChannel.Reader.WaitToReadAsync(token).ConfigureAwait(false))
         {
             if (InfoChannel.Reader.TryRead(out Variation? variation))
             {
@@ -57,7 +51,7 @@ public class GameAnalyzes
 
     private async Task ProduceRatings(IEnumerable<Move[]> chunks, CancellationToken token)
     {
-        ParallelOptions po = new ParallelOptions()
+        ParallelOptions po = new()
         {
             MaxDegreeOfParallelism = chunks.Count(),
             CancellationToken = token
@@ -66,8 +60,8 @@ public class GameAnalyzes
         {
             await Parallel.ForEachAsync(chunks, po, async (data, token) =>
             {
-                await ChunkAnalyze(data, token);
-            });
+                await ChunkAnalyze(data, token).ConfigureAwait(false);
+            }).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
         finally
@@ -83,15 +77,13 @@ public class GameAnalyzes
             return;
         }
         int startPos = moves.First().HalfMoveNumber;
-        Engine engine = new Engine(Engine.Key, Engine.Value);
-        engine.Start();
-        await engine.IsReady();
-        await engine.GetOptions();
-        await engine.IsReady();
-        engine.SetOption("Threads", Pvs);
-        await engine.IsReady();
-        engine.SetOption("MultiPV", Pvs);
-        await engine.IsReady();
+        Engine engine = new(Engine.Key, Engine.Value);
+        await engine.Start().ConfigureAwait(false);
+        await engine.IsReady().ConfigureAwait(false);
+        await engine.GetOptions().ConfigureAwait(false);
+        await engine.IsReady().ConfigureAwait(false);
+        await engine.SetOption("Threads", Pvs).ConfigureAwait(false);
+        await engine.SetOption("MultiPV", Pvs).ConfigureAwait(false);
 
         try
         {
@@ -102,12 +94,12 @@ public class GameAnalyzes
                 {
                     break;
                 }
-                engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Take(startPos + i).Select(s => s.EngineMove.ToString()))}");
-                await engine.IsReady();
+                await engine.Send($"position startpos moves {String.Join(" ", Game.State.Moves.Take(startPos + i).Select(s => s.EngineMove.ToString()))}").ConfigureAwait(false);
+                await engine.IsReady().ConfigureAwait(false);
                 engine.Status.Pvs.Clear();
-                engine.Send("go");
-                await Task.Delay(TimeSpan, token);
-                var info = await engine.GetStopInfo();
+                await engine.Send("go").ConfigureAwait(false);
+                await Task.Delay(TimeSpan, token).ConfigureAwait(false);
+                var info = await engine.GetStopInfo().ConfigureAwait(false);
 
                 GetVariations(info, startPos + i);
 
@@ -116,10 +108,6 @@ public class GameAnalyzes
         }
         catch (OperationCanceledException)
         {
-        }
-        catch (Exception ex)
-        {
-            logger.LogError($"chunk analyze failed: {ex.Message}");
         }
         finally
         {
@@ -131,119 +119,34 @@ public class GameAnalyzes
     {
         if (info != null && info.PvInfos.Any())
         {
-            Game pgnGame = new Game();
+            Game pgnGame = new();
             for (int i = 0; i < halfMove; i++)
             {
                 var iresult = pgnGame.Move(Game.State.Moves[i].EngineMove);
                 if (iresult != MoveState.Ok)
                 {
-                    logger.LogError($"enginemove failed: {Game.State.Moves[i].EngineMove}");
-                    return;
+                    throw new MoveException($"enginemove failed: {Game.State.Moves[i].EngineMove}");
                 }
             }
 
             foreach (var pv in info.PvInfos)
             {
-                Variation variation = new Variation(halfMove);
+                Variation variation = new(halfMove);
                 variation.Evaluation = new Evaluation(pv.Score, pv.Mate, halfMove % 2 != 0);
                 variation.Pv = pv.MultiPv;
-                // Game pvGame = new Game(pgnGame);
-                Game pvGame = new Game();
-                for (int i = 0; i < halfMove; i++)
-                {
-                    var iresult = pvGame.Move(Game.State.Moves[i].EngineMove);
-                    if (iresult != MoveState.Ok)
-                    {
-                        logger.LogError($"enginemove failed: {Game.State.Moves[i].EngineMove}");
-                        return;
-                    }
-                }
+                Game pvGame = new(pgnGame);
 
                 for (int i = 0; i < pv.Moves.Count; i++)
                 {
-                    var rresult = pvGame.Move(pv.Moves[i]);
+                    var rresult = pvGame.Move(pv.Moves.ElementAt(i));
                     if (rresult != MoveState.Ok)
                     {
-                        logger.LogError($"enginemove failed: {pv.Moves[i]}");
-                        break;
+                        throw new MoveException($"enginemove failed: {pv.Moves.ElementAt(i)}");
                     }
                     variation.Moves.Add(pvGame.State.Moves.Last());
                 }
                 InfoChannel.Writer.TryWrite(variation);
             }
         }
-    }
-
-    private Rating? CollectInfo(EngineInfo? info, int halfMove)
-    {
-        if (info == null)
-        {
-            return null;
-        }
-
-        if (info.PvInfos.Any())
-        {
-            Move gameMove = Game.State.Moves[halfMove];
-
-            Game pgnGame = new Game();
-            for (int i = 0; i < halfMove; i++)
-            {
-                var iresult = pgnGame.Move(Game.State.Moves[i].EngineMove);
-                if (iresult != MoveState.Ok)
-                {
-                    logger.LogError($"enginemove failed: {Game.State.Moves[i].EngineMove}");
-                    return null;
-                }
-            }
-
-            EngineMove bestEngineMove = info.PvInfos[0].Moves[0];
-            Evaluation bestEval = new Evaluation(info.PvInfos[0].Score, info.PvInfos[0].Mate, halfMove % 2 != 0);
-            var result = pgnGame.Move(bestEngineMove);
-            if (result != MoveState.Ok)
-            {
-                logger.LogError($"enginemove failed: {bestEngineMove}");
-                return null;
-            }
-            Move bestMove = pgnGame.State.Moves.Last();
-            bestMove.Evaluation = bestEval;
-
-            Rating rating = new Rating(gameMove, bestMove);
-            rating.BestLine.AddRange(info.PvInfos[0].Moves);
-
-            for (int i = 1; i < info.PvInfos.Count; i++)
-            {
-                EngineMove engineMove = info.PvInfos[i].Moves[0];
-                Evaluation eval = new Evaluation(info.PvInfos[i].Score, info.PvInfos[i].Mate, halfMove % 2 != 0);
-                pgnGame.Revert();
-                var rresult = pgnGame.Move(engineMove);
-                if (rresult != MoveState.Ok)
-                {
-                    logger.LogError($"enginemove failed: {engineMove}");
-                    return null;
-                }
-
-                Move move = pgnGame.State.Moves.Last();
-                move.Evaluation = eval;
-                rating.RunnerMoves.Add(move);
-                rating.RunnerLines.Add(info.PvInfos[i].Moves);
-            }
-            return rating;
-        }
-        return null;
-    }
-}
-
-public record Rating
-{
-    public Move GameMove { get; init; }
-    public Move BestMove { get; init; }
-    public List<EngineMove> BestLine { get; init; } = new List<EngineMove>();
-    public List<Move> RunnerMoves { get; init; } = new List<Move>();
-    public List<List<EngineMove>> RunnerLines { get; init; } = new List<List<EngineMove>>();
-
-    public Rating(Move gameMove, Move bestMove)
-    {
-        GameMove = gameMove;
-        BestMove = bestMove;
     }
 }

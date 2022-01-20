@@ -1,28 +1,23 @@
 ﻿using pax.chess;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace pax.uciChessEngine;
 public sealed class Analyzes : IDisposable
 {
-    public List<Engine> Engines { get; private set; } = new List<Engine>();
+    public ICollection<Engine> Engines { get; private set; } = new List<Engine>();
     public Game Game { get; private set; } = new Game();
-    private string? Fen;
+    private readonly string? Fen;
     public TimeSpan Refreshtime { get; set; }
     private CancellationTokenSource? TokenSource;
-    public event EventHandler<List<EngineInfo>>? EngineInfoAvailable;
-    private object lockobject = new object();
-    private bool InfoUpdateRunning = false;
+    public event EventHandler<EngineInfoEventArgs>? EngineInfoAvailable;
+    private readonly object lockobject = new();
+    private bool InfoUpdateRunning;
     public int CpuCoresUsed => Engines.Sum(s => s.Threads());
-    public bool isPaused { get; private set; } = false;
+    public bool IsPaused { get; private set; }
 
-    private void OnEngineInfoAvailable(List<EngineInfo> infos)
+    private void OnEngineInfoAvailable(EngineInfoEventArgs infosEventArgs)
     {
-        EngineInfoAvailable?.Invoke(this, infos);
+        EngineInfoAvailable?.Invoke(this, infosEventArgs);
     }
 
     public Analyzes(Game game, string? fen = null)
@@ -34,53 +29,67 @@ public sealed class Analyzes : IDisposable
 
     public async Task AddEngine(Engine engine)
     {
-        await InitEngine(engine);
+        if (engine == null)
+        {
+            throw new ArgumentNullException(nameof(engine));
+        }
         Engines.Add(engine);
+        await InitEngine(engine).ConfigureAwait(false);
     }
 
     public void RemoveEngine(Engine engine)
     {
+        if (engine == null)
+        {
+            throw new ArgumentNullException(nameof(engine));
+        }
         Engines.Remove(engine);
         engine.Dispose();
     }
 
     private async Task InitEngine(Engine engine)
     {
-        engine.Start();
-        await engine.IsReady();
-        await engine.GetOptions();
-        await SetEngineOption(engine, "Threads", 2);
-        await SetEngineOption(engine, "MultiPV", 2);
-    }
-
-    public async Task SetEngineOption(Engine engine, string name, object value)
-    {
-        engine.SetOption(name, value);
-        await engine.IsReady();
+        if (Engines.Contains(engine))
+        {
+            await engine.Start().ConfigureAwait(false);
+            await engine.IsReady().ConfigureAwait(false);
+            await engine.GetOptions().ConfigureAwait(false);
+            await engine.SetOption("Threads", 2).ConfigureAwait(false);
+            await engine.IsReady().ConfigureAwait(false);
+            await engine.SetOption("MultiPV", 2).ConfigureAwait(false);
+            await engine.IsReady().ConfigureAwait(false);
+        }
     }
 
     public async Task ChangePvLine(Engine engine, bool upOrDown)
     {
-        var pvOption = engine.Status.Options.FirstOrDefault(f => f.Name == "MultiPV");
-        if (pvOption != null)
+        if (engine == null)
         {
-            int PvLines = (int)pvOption.Value;
-            if (upOrDown)
+            throw new ArgumentNullException(nameof(engine));
+        }
+        if (Engines.Contains(engine))
+        {
+            var pvOption = engine.Status.Options.FirstOrDefault(f => f.Name == "MultiPV");
+            if (pvOption != null)
             {
-                PvLines++;
-            }
-            else
-            {
-                PvLines = Math.Max(1, PvLines - 1);
-            }
-            if (PvLines != (int)pvOption.Value)
-            {
-                engine.Send("stop");
-                await engine.IsReady();
-                engine.Status.Pvs.Clear();
-                await SetEngineOption(engine, "Threads", PvLines);
-                await SetEngineOption(engine, "MultiPV", PvLines);
-                engine.Send("go");
+                int PvLines = (int)pvOption.Value;
+                if (upOrDown)
+                {
+                    PvLines++;
+                }
+                else
+                {
+                    PvLines = Math.Max(1, PvLines - 1);
+                }
+                if (PvLines != (int)pvOption.Value)
+                {
+                    await engine.Send("stop").ConfigureAwait(false);
+                    await engine.IsReady().ConfigureAwait(false);
+                    engine.Status.Pvs.Clear();
+                    await engine.SetOption("Threads", PvLines).ConfigureAwait(false);
+                    await engine.SetOption("MultiPV", PvLines).ConfigureAwait(false);
+                    await engine.Send("go").ConfigureAwait(false);
+                }
             }
         }
     }
@@ -88,19 +97,19 @@ public sealed class Analyzes : IDisposable
     public void Pause()
     {
         TokenSource?.Cancel();
-        Engines.ForEach(f => f.Send("stop"));
-        isPaused = true;
+        Engines.ToList().ForEach(f => _ = f.Send("stop"));
+        IsPaused = true;
     }
 
     public void Resume()
     {
-        isPaused = false;
+        IsPaused = false;
         _ = UpdateEngineGame();
     }
 
     public async Task UpdateEngineGame()
     {
-        if (isPaused)
+        if (IsPaused)
         {
             return;
         }
@@ -108,11 +117,11 @@ public sealed class Analyzes : IDisposable
         var moves = Game.ObserverState.Moves.Select(s => s.EngineMove.ToString());
         foreach (var engine in Engines)
         {
-            engine.Send("stop");
-            await engine.IsReady();
-            engine.Send($"position {(Fen == null ? "startpos" : $"fen {Fen}")} moves {String.Join(" ", moves)}");
-            await engine.IsReady();
-            engine.Send("go");
+            await engine.Send("stop").ConfigureAwait(false);
+            await engine.IsReady().ConfigureAwait(false);
+            await engine.Send($"position {(Fen == null ? "startpos" : $"fen {Fen}")} moves {String.Join(" ", moves)}").ConfigureAwait(false);
+            await engine.IsReady().ConfigureAwait(false);
+            await engine.Send("go").ConfigureAwait(false);
         }
         _ = UpdateEngineEval();
     }
@@ -142,7 +151,7 @@ public sealed class Analyzes : IDisposable
         {
             while (!TokenSource.Token.IsCancellationRequested)
             {
-                ConcurrentBag<EngineInfo> infos = new ConcurrentBag<EngineInfo>();
+                ConcurrentBag<EngineInfo> infos = new();
                 await Parallel.ForEachAsync(Engines, po, async (engine, token) =>
                 {
                     await Task.Run(() =>
@@ -152,15 +161,16 @@ public sealed class Analyzes : IDisposable
                         {
                             infos.Add(engineInfo);
                         }
-                    }, token);
-                });
+                    }, token).ConfigureAwait(false);
+                }).ConfigureAwait(false);
                 if (infos.Any())
                 {
-                    OnEngineInfoAvailable(infos.ToList());
+                    OnEngineInfoAvailable(new EngineInfoEventArgs(infos.ToList()));
                 }
-                await Task.Delay(Refreshtime, TokenSource.Token);
+                await Task.Delay(Refreshtime, TokenSource.Token).ConfigureAwait(false);
             }
-        } catch (OperationCanceledException) { }
+        }
+        catch (OperationCanceledException) { }
         finally
         {
             InfoUpdateRunning = false;
@@ -172,8 +182,18 @@ public sealed class Analyzes : IDisposable
     public void Dispose()
     {
         TokenSource?.Cancel();
-        Engines.ForEach(f => f.Dispose());
+        Engines.ToList().ForEach(f => f.Dispose());
         Engines.Clear();
+        TokenSource?.Dispose();
+    }
+}
 
+public class EngineInfoEventArgs : EventArgs
+{
+    public IReadOnlyCollection<EngineInfo> Infos { get; init; }
+
+    public EngineInfoEventArgs(IReadOnlyCollection<EngineInfo> infos)
+    {
+        Infos = infos;
     }
 }
