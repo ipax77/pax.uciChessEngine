@@ -263,16 +263,17 @@ public sealed class Engine : IDisposable
 
     public void Dispose()
     {
+        if (engineProcess != null)
+        {
+            Stop();
+        }
         Status.ErrorRaised -= ErrorRaised;
         semaphore.Dispose();
         sendSemaphore.Dispose();
         startEwh.Dispose();
         readyEwh.Dispose();
         infoEwh.Dispose();
-        if (engineProcess != null)
-        {
-            Stop();
-        }
+
         StatusService.RemoveEngine(EngineGuid);
     }
 }
