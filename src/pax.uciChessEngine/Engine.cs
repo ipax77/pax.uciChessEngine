@@ -127,14 +127,25 @@ public sealed class Engine : IDisposable
 
     public void Stop()
     {
-        if (engineProcess != null && !engineProcess.HasExited)
+        try
         {
-            _ = Send("quit");
-            engineProcess?.WaitForExit(3000);
+            if (engineProcess != null && !engineProcess.HasExited)
+            {
+                _ = Send("quit");
+                engineProcess?.WaitForExit(3000);
+            }
+            engineProcess?.Close();
+            engineProcess?.Dispose();
         }
-        engineProcess?.Close();
-        engineProcess?.Dispose();
-        engineProcess = null;
+        catch (Exception ex)
+        {
+            Logger.EngineError($"{EngineGuid} {Name} failed stopping: {ex.Message}");
+            engineProcess?.Dispose();
+        }
+        finally
+        {
+            engineProcess = null;
+        }
     }
 
     public async Task Send(string cmd)

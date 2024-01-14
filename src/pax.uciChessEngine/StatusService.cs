@@ -24,7 +24,8 @@ internal static class StatusService
     private static readonly Regex optionDefaultRx = new(@"\s+default\s+([^\s]+)");
     private static readonly Regex optionComboRx = new(@"\s+var\s+([\d\w_-]+)");
 
-    public static ILogger<Engine> logger = ApplicationDebugLogging.CreateLogger<Engine>();
+    // public static ILogger<Engine> logger = ApplicationDebugLogging.CreateLogger<Engine>();
+    public static ILogger<Engine> logger = ApplicationLogging.CreateLogger<Engine>();
 
     internal static void AddEngine(Engine engine)
     {
