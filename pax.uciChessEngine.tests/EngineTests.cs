@@ -1,6 +1,7 @@
 using Xunit;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace pax.uciChessEngine.tests
 {
@@ -83,6 +84,34 @@ namespace pax.uciChessEngine.tests
                 var pv = info.PvInfos.ElementAt(i);
                 Assert.True(pv.Score > 0);
             }
+            engine.Dispose();
+        }
+
+        [Fact]
+        public async Task GetStopInfoTest()
+        {
+            Engine engine = new("Stockfish", @"C:\data\stockfish_14.1_win_x64_avx2\stockfish_14.1_win_x64_avx2.exe");
+            // Engine engine = new Engine("Houdini", @"C:\Program Files\Houdini 3 Chess\Houdini_3_Pro_x64.exe");
+            await engine.Start();
+            await engine.IsReady();
+            await engine.Send("ucinewgame");
+            await engine.Send("go");
+
+            ManualResetEvent mre = new(false);
+            engine.Status.MoveReady += (o, e) =>
+            {
+                mre.Set();
+            };
+
+            await Task.Delay(1000);
+            EngineInfo? info = await engine.GetStopInfo();
+
+            Assert.NotNull(info);
+            Assert.NotNull(info?.BestMove);
+
+            var waitResult = mre.WaitOne(3000);
+            Assert.True(waitResult);
+
             engine.Dispose();
         }
     }
