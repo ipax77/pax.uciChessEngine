@@ -14,6 +14,7 @@ public class EngineVsEngine : IDisposable
     public DateTime StartTime { get; private set; }
     public EngineScore WhiteScore { get; private set; } = new();
     public EngineScore BlackScore { get; private set; } = new();
+    
 
     public int whiteTime;
     public int blackTime;
@@ -82,14 +83,14 @@ public class EngineVsEngine : IDisposable
 
         if (BlackToMove)
         {
-            BlackTimeMilliseconds -= blackTime;
+            BlackTimeMilliseconds -= blackTime + BlackIncrement;
             blackTime = 0;
             await whiteEngine.Send($"position startpos moves {string.Join(' ', moves)}");
             await whiteEngine.Send($"go wtime {WhiteTimeMilliseconds} btime {BlackTimeMilliseconds} winc {WhiteIncrement} binc {BlackIncrement}");
         }
         else
         {
-            WhiteTimeMilliseconds -= whiteTime;
+            WhiteTimeMilliseconds -= whiteTime + WhiteIncrement;
             whiteTime = 0;
             await blackEngine.Send($"position startpos moves {string.Join(' ', moves)}");
             await blackEngine.Send($"go wtime {WhiteTimeMilliseconds} btime {BlackTimeMilliseconds} winc {WhiteIncrement} binc {BlackIncrement}");
@@ -147,4 +148,12 @@ public class MoveReadyEventArgs : EventArgs
     public bool BlackToMove { get; set; }
     public string Move { get; init; } = string.Empty;
     public EngineScore Score { get; set; } = new();
+}
+
+public enum Result
+{
+    None = 1,
+    Draw = 2,
+    WhiteWin = 3,
+    BlackWin = 4
 }

@@ -26,4 +26,25 @@ public class EngineVsEngineTests
 
         eve.Dispose();
     }
+
+    [TestMethod]
+    public async Task BasicEvETest2()
+    {
+        EngineVsEngine eve = new(engineBinary1, engineBinary2);
+
+        List<MoveReadyEventArgs> moves = [];
+
+        eve.MoveReady += (o, e) =>
+        {
+            moves.Add(e);
+        };
+
+        eve.Start();
+
+        await Task.Delay(30000);
+
+        Assert.IsTrue(moves.Count > 0);
+
+        eve.Dispose();
+    }
 }
