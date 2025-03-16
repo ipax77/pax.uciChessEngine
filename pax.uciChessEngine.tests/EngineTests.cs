@@ -6,7 +6,7 @@ namespace pax.uciChessEngine.tests
 {
     public class EngineTests
     {
-        private readonly string enginePath = @"C:\data\stockfish-windows-x86-64\stockfish\stockfish-windows-x86-64.exe";
+        private readonly string enginePath = @"C:\data\chess\engines\stockfish\stockfish-windows-x86-64.exe";
 
         [Fact]
         public async Task Option()

@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using pax.chess;
+﻿using pax.chess;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -7,7 +6,7 @@ using System.Threading.Channels;
 
 namespace pax.uciChessEngine;
 
-internal static class StatusService
+internal static partial class StatusService
 {
     internal static ConcurrentDictionary<Guid, Engine> Engines = new();
     private static readonly Channel<KeyValuePair<Guid, string>> OutputChannel = Channel.CreateUnbounded<KeyValuePair<Guid, string>>();
@@ -15,17 +14,14 @@ internal static class StatusService
     private static bool IsConsuming;
     private static CancellationTokenSource tokenSource = new();
 
-    private static readonly Regex bestmoveRx = new(@"^bestmove\s(.*)\sponder\s(.*)$");
-    private static readonly Regex valueRx = new(@"\s(\w+)\s(\-?\d+)");
-    private static readonly Regex optionNameRx = new(@"option\s+name\s+([\d\w\s]+)\s+type");
-    private static readonly Regex optionTypeRx = new(@"\s+type\s+([^\s]+)");
-    private static readonly Regex optionMinRx = new(@"\s+min\s+([^\s]+)");
-    private static readonly Regex optionMaxRx = new(@"\s+max\s+([^\s]+)");
-    private static readonly Regex optionDefaultRx = new(@"\s+default\s+([^\s]+)");
-    private static readonly Regex optionComboRx = new(@"\s+var\s+([\d\w_-]+)");
-
-    // public static ILogger<Engine> logger = ApplicationDebugLogging.CreateLogger<Engine>();
-    public static ILogger<Engine> logger = ApplicationLogging.CreateLogger<Engine>();
+    private static readonly Regex bestmoveRx = BestMoveGrx();
+    private static readonly Regex valueRx = ValueGrx();
+    private static readonly Regex optionNameRx = OptionTypeGrx();
+    private static readonly Regex optionTypeRx = OptionNameGrx();
+    private static readonly Regex optionMinRx = OptionMinGrx();
+    private static readonly Regex optionMaxRx = OptionMaxGrx();
+    private static readonly Regex optionDefaultRx = OptionDefaultGrx();
+    private static readonly Regex optionComboRx = OptionComboGrx();
 
     internal static void AddEngine(Engine engine)
     {
@@ -74,10 +70,6 @@ internal static class StatusService
                     {
                         ParseOutput(engine, output.Value);
                     }
-                    else
-                    {
-                        logger.EngineWarning($"engine {output.Key} not found: {output.Value}");
-                    }
                 }
             }
         }
@@ -90,171 +82,149 @@ internal static class StatusService
 
     internal static void ParseOutput(Engine engine, string output)
     {
-        Status status = engine.Status;
-        // logger.EnginePong($"{engine.EngineGuid} {output}");
+        var status = engine.Status;
 
         if (status.State == EngineState.None)
         {
-            status.State = EngineState.Started;
-            status.OnStatusChanged(new StatusEventArgs() { State = EngineState.Started });
+            UpdateStatus(status, EngineState.Started);
         }
 
         if (output.StartsWith("info ", StringComparison.Ordinal))
         {
-            if (output.Contains("evaluation using", StringComparison.Ordinal))
-            {
-                status.State = EngineState.Evaluating;
-            }
-
-            //if (output.Contains("currmove"))
-            //{
-            //    if (infos.Length == 6)
-            //    {
-            //        Depth = GetInt(infos[2]);
-            //        CurrentMove = Map.GetEngineMove(infos[4]);
-            //        CurrentMoveNumber = GetInt(infos[6]);
-            //    }
-            //}
-            else
-            {
-                var infos = output.Split(" pv ");
-                if (infos.Length == 2)
-                {
-                    Match m = valueRx.Match(infos[0]);
-                    Dictionary<string, int> ents = new();
-                    while (m.Success)
-                    {
-                        ents[m.Groups[1].Value] = int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
-                        m = m.NextMatch();
-                    }
-                    if (ents.TryGetValue("multipv", out int value))
-                    {
-                        var info = status.GetPv(value);
-                        info.SetValues(ents);
-                        info.SetMoves(infos[1].Split(" ").ToList());
-                    }
-                    else
-                    {
-                        var info = status.GetPv(1);
-                        info.SetValues(ents);
-                        info.SetMoves(infos[1].Split(" ").ToList());
-                    }
-                }
-            }
-            status.State = EngineState.Calculating;
+            ProcessInfoOutput(status, output);
         }
         else if (output.StartsWith("bestmove ", StringComparison.Ordinal))
         {
-            var match = bestmoveRx.Match(output);
-            if (match.Success)
-            {
-                status.BestMove = Map.GetEngineMove(match.Groups[1].Value);
-                status.Ponder = Map.GetEngineMove(match.Groups[2].Value);
-            }
-            else
-            {
-                status.BestMove = Map.GetEngineMove(output.Substring(9));
-            }
-            if (status.BestMove != null)
-            {
-                status.State = EngineState.BestMove;
-                status.OnMoveReady(new MoveEventArgs(status.BestMove));
-            }
+            ProcessBestMove(status, output);
         }
         else if (output == "readyok")
         {
-            status.State = EngineState.Ready;
-            status.OnStatusChanged(new StatusEventArgs() { State = EngineState.Ready });
+            UpdateStatus(status, EngineState.Ready);
         }
-        else if (output.StartsWith("error", StringComparison.InvariantCultureIgnoreCase))
+        else if (output.StartsWith("error", StringComparison.OrdinalIgnoreCase))
         {
             status.OnErrorRaised(new ErrorEventArgs(output));
         }
         else if (output.StartsWith("option", StringComparison.Ordinal))
         {
-            string name = String.Empty;
-            int min = 0;
-            int max = 0;
-            object defaultValue = String.Empty;
-            string type = String.Empty;
-            object? Value = null;
-            List<string>? vars = null;
-
-            Match nameMatch = optionNameRx.Match(output);
-            if (nameMatch.Success)
-            {
-                name = nameMatch.Groups[1].Value;
-                if (status.Options.FirstOrDefault(f => f.Name == name) != null)
-                {
-                    return;
-                }
-            }
-            else
-            {
-                logger.EngineWarning($"{status.EngineName} could not identify option: {output}");
-                return;
-            }
-
-            Match typeMatch = optionTypeRx.Match(output);
-            if (typeMatch.Success)
-            {
-                type = typeMatch.Groups[1].Value;
-            }
-            if (type == "spin")
-            {
-                Match minMatch = optionMinRx.Match(output);
-                if (minMatch.Success)
-                {
-                    min = int.Parse(minMatch.Groups[1].Value, CultureInfo.InvariantCulture);
-                }
-                Match maxMatch = optionMaxRx.Match(output);
-                if (maxMatch.Success)
-                {
-                    max = int.Parse(maxMatch.Groups[1].Value, CultureInfo.InvariantCulture);
-                }
-                Match defaultMatch = optionDefaultRx.Match(output);
-                {
-                    defaultValue = int.Parse(defaultMatch.Groups[1].Value, CultureInfo.InvariantCulture);
-                    Value = defaultValue;
-                }
-            }
-            else if (type == "string")
-            {
-                Match defaultMatch = optionDefaultRx.Match(output);
-                {
-                    defaultValue = defaultMatch.Groups[1].Value;
-                    if ((string)defaultValue == "<empty>")
-                    {
-                        defaultValue = String.Empty;
-                    }
-                    Value = defaultValue;
-                }
-            }
-            else if (type == "check")
-            {
-                Match defaultMatch = optionDefaultRx.Match(output);
-                {
-                    defaultValue = bool.Parse(defaultMatch.Groups[1].Value);
-                    Value = defaultValue;
-                }
-            }
-            else if (type == "combo")
-            {
-                Match defaultMatch = optionDefaultRx.Match(output);
-                {
-                    defaultValue = defaultMatch.Groups[1].Value;
-                    Value = defaultValue;
-                }
-
-                vars = new List<string>();
-                Match comboMatch = optionComboRx.Match(output);
-                while (comboMatch.Success)
-                {
-                    vars.Add(comboMatch.Groups[1].Value);
-                    comboMatch = comboMatch.NextMatch();
-                }
-            }
-            status.Options.Add(new EngineOption(name, type, defaultValue, vars, min, max));
+            ProcessOptionOutput(engine, status, output);
         }
     }
+
+    private static void UpdateStatus(Status status, EngineState newState)
+    {
+        status.State = newState;
+        status.OnStatusChanged(new StatusEventArgs { State = newState });
+    }
+
+    private static void ProcessInfoOutput(Status status, string output)
+    {
+        if (output.Contains("evaluation using", StringComparison.Ordinal))
+        {
+            status.State = EngineState.Evaluating;
+        }
+        else
+        {
+            var infos = output.Split(" pv ", 2);
+            if (infos.Length == 2)
+            {
+                var ents = ExtractKeyValuePairs(infos[0]);
+                int multipv = ents.GetValueOrDefault("multipv", 1);
+                var info = status.GetPv(multipv);
+                info.SetValues(ents);
+                info.SetMoves(infos[1].Split(' ').ToList());
+            }
+        }
+        status.State = EngineState.Calculating;
+    }
+
+    private static Dictionary<string, int> ExtractKeyValuePairs(string input)
+    {
+        var ents = new Dictionary<string, int>();
+        Match match = valueRx.Match(input);
+        while (match.Success)
+        {
+            ents[match.Groups[1].Value] = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+            match = match.NextMatch();
+        }
+        return ents;
+    }
+
+    private static void ProcessBestMove(Status status, string output)
+    {
+        var match = bestmoveRx.Match(output);
+        status.BestMove = match.Success
+            ? Map.GetEngineMove(match.Groups[1].Value)
+            : Map.GetEngineMove(output[9..]);
+
+        status.Ponder = match.Success ? Map.GetEngineMove(match.Groups[2].Value) : null;
+
+        if (status.BestMove != null)
+        {
+            UpdateStatus(status, EngineState.BestMove);
+            status.OnMoveReady(new MoveEventArgs(status.BestMove));
+        }
+    }
+
+    private static void ProcessOptionOutput(Engine engine, Status status, string output)
+    {
+        Match nameMatch = optionNameRx.Match(output);
+        if (!nameMatch.Success)
+        {
+            engine.LogWarning($"{status.EngineName} could not identify option: {output}");
+            return;
+        }
+
+        string name = nameMatch.Groups[1].Value;
+        if (status.Options.Any(opt => opt.Name == name)) return;
+
+        string type = optionTypeRx.Match(output).Groups[1].Value;
+        object defaultValue = ExtractDefaultValue(output, type, out int min, out int max, out List<string>? vars);
+
+        status.Options.Add(new EngineOption(name, type, defaultValue, vars, min, max));
+    }
+
+    private static object ExtractDefaultValue(string output, string type, out int min, out int max, out List<string>? vars)
+    {
+        min = max = 0;
+        vars = null;
+        return type switch
+        {
+            "spin" => new
+            {
+                Min = int.Parse(optionMinRx.Match(output).Groups[1].Value, CultureInfo.InvariantCulture),
+                Max = int.Parse(optionMaxRx.Match(output).Groups[1].Value, CultureInfo.InvariantCulture),
+                DefaultValue = int.Parse(optionDefaultRx.Match(output).Groups[1].Value, CultureInfo.InvariantCulture)
+            },
+            "string" => optionDefaultRx.Match(output).Groups[1].Value switch
+            {
+                "<empty>" => string.Empty,
+                var value => value
+            },
+            "check" => bool.Parse(optionDefaultRx.Match(output).Groups[1].Value),
+            "combo" => new
+            {
+                DefaultValue = optionDefaultRx.Match(output).Groups[1].Value,
+                Vars = optionComboRx.Matches(output).Select(m => m.Groups[1].Value).ToList()
+            },
+            _ => string.Empty
+        };
+    }
+
+    [GeneratedRegex(@"^bestmove\s(.*)\sponder\s(.*)$")]
+    private static partial Regex BestMoveGrx();
+    [GeneratedRegex(@"\s(\w+)\s(\-?\d+)")]
+    private static partial Regex ValueGrx();
+    [GeneratedRegex(@"option\s+name\s+([\d\w\s]+)\s+type")]
+    private static partial Regex OptionTypeGrx();
+    [GeneratedRegex(@"\s+type\s+([^\s]+)")]
+    private static partial Regex OptionNameGrx();
+    [GeneratedRegex(@"\s+min\s+([^\s]+)")]
+    private static partial Regex OptionMinGrx();
+    [GeneratedRegex(@"\s+max\s+([^\s]+)")]
+    private static partial Regex OptionMaxGrx();
+    [GeneratedRegex(@"\s+default\s+([^\s]+)")]
+    private static partial Regex OptionDefaultGrx();
+    [GeneratedRegex(@"\s+var\s+([\d\w_-]+)")]
+    private static partial Regex OptionComboGrx();
 }

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -17,10 +18,10 @@ public sealed class Engine : IDisposable
     public string Name { get; private set; }
     public string Binary { get; private set; }
 
-    private static ILogger<Engine> Logger => StatusService.logger;
-
     public Status Status { get; private set; } = new Status();
 
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger<Engine> _logger;
     private readonly SemaphoreSlim semaphore = new(1, 1);
     private readonly SemaphoreSlim sendSemaphore = new(1, 1);
     private EventWaitHandle startEwh = new(false, EventResetMode.ManualReset);
@@ -40,14 +41,21 @@ public sealed class Engine : IDisposable
         }
     }
 
-    public Engine(string engineName, string engineBinary)
+    public Engine(string engineName, string engineBinary, LogLevel logLevel = LogLevel.None)
     {
         EngineGuid = Guid.NewGuid();
         Name = engineName;
         Binary = engineBinary;
         Status.EngineName = Name;
-        StatusService.AddEngine(this);
 
+        _loggerFactory = CreateLoggerFactory(logLevel);
+        _logger = _loggerFactory.CreateLogger<Engine>();
+        StatusService.AddEngine(this);
+    }
+
+    public void LogWarning(string msg)
+    {
+        _logger.EngineWarning(msg);
     }
 
     public async Task<bool> Start()
@@ -80,7 +88,7 @@ public sealed class Engine : IDisposable
         engineProcess.BeginOutputReadLine();
         engineProcess.BeginErrorReadLine();
 
-        Logger.EngineStarted($"{EngineGuid} {Name}");
+        _logger.EngineStarted($"{EngineGuid} {Name}");
 
         Status.ErrorRaised += ErrorRaised;
         // SetDefaultConfig();
@@ -106,7 +114,7 @@ public sealed class Engine : IDisposable
 
     private void ErrorRaised(object? sender, ErrorEventArgs e)
     {
-        Logger.EngineError($"{EngineGuid} error: {e.Error}");
+        _logger.EngineError($"{EngineGuid} error: {e.Error}");
     }
 
     private void HandleOutputData(object sender, DataReceivedEventArgs e)
@@ -121,7 +129,7 @@ public sealed class Engine : IDisposable
     {
         if (!String.IsNullOrEmpty(e.Data))
         {
-            Logger.EngineError($"engine {Name} error: {e.Data}");
+            _logger.EngineError($"engine {Name} error: {e.Data}");
         }
     }
 
@@ -140,7 +148,7 @@ public sealed class Engine : IDisposable
         }
         catch (Exception ex)
         {
-            Logger.EngineError($"{EngineGuid} {Name} failed stopping: {ex.Message}");
+            _logger.EngineError($"{EngineGuid} {Name} failed stopping: {ex.Message}");
             engineProcess?.Dispose();
         }
         finally
@@ -162,7 +170,7 @@ public sealed class Engine : IDisposable
                 {
                     await engineProcess.StandardInput.FlushAsync().ConfigureAwait(false);
                 }
-                Logger.EnginePing($"{EngineGuid} {Name} ping {cmd}");
+                _logger.EnginePing($"{EngineGuid} {Name} ping {cmd}");
             }
             finally
             {
@@ -196,7 +204,7 @@ public sealed class Engine : IDisposable
         }
         else
         {
-            Logger.EngineWarning($"{EngineGuid} {Name} option {name} not found.");
+            _logger.EngineWarning($"{EngineGuid} {Name} option {name} not found.");
         }
         await IsReady().ConfigureAwait(false);
     }
@@ -261,7 +269,7 @@ public sealed class Engine : IDisposable
         }
         if (!success)
         {
-            Logger.EngineError($"{EngineGuid} failed waiting for info");
+            _logger.EngineError($"{EngineGuid} failed waiting for info");
         }
         var info2 = GetInfo();
         Status.Pvs.Clear();
@@ -272,6 +280,23 @@ public sealed class Engine : IDisposable
     {
         // StatusService.HandleOutput(EngineGuid, info);
         StatusService.ParseOutput(this, info);
+    }
+
+    private static ILoggerFactory CreateLoggerFactory(LogLevel logLevel)
+    {
+        if (logLevel == LogLevel.None)
+            return NullLoggerFactory.Instance;
+
+        return LoggerFactory.Create(builder =>
+        {
+            builder.ClearProviders();
+            builder.AddSimpleConsole(options =>
+            {
+                options.IncludeScopes = true;
+                options.SingleLine = true;
+                options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+            }).SetMinimumLevel(logLevel);
+        });
     }
 
     public void Dispose()
@@ -288,5 +313,6 @@ public sealed class Engine : IDisposable
         infoEwh.Dispose();
 
         StatusService.RemoveEngine(EngineGuid);
+        _loggerFactory.Dispose();
     }
 }

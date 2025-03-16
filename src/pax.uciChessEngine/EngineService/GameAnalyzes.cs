@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using pax.chess;
+﻿using pax.chess;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
@@ -13,7 +12,6 @@ public class GameAnalyzes
     public int Done => _Done;
     private TimeSpan TimeSpan;
     private int Pvs;
-    private static ILogger<Engine> Logger => StatusService.logger;
     private Channel<Variation> InfoChannel = Channel.CreateUnbounded<Variation>();
 
     public GameAnalyzes(Game game, KeyValuePair<string, string> engine)
