@@ -1,12 +1,9 @@
-﻿using Microsoft.Extensions.Logging;
-using pax.chess;
+﻿using pax.chess;
 
 namespace pax.uciChessEngine;
 
 public sealed class EngineGame : IDisposable
 {
-    public static ILogger<Engine> Logger => StatusService.logger;
-
     public Guid EngineGameGuid { get; private set; } = Guid.NewGuid();
     public Engine? WhiteEngine { get; private set; }
     public Engine? BlackEngine { get; private set; }

@@ -7,10 +7,12 @@ namespace pax.uciChessEngine.tests
 {
     public class EngineTests
     {
+        private readonly string enginePath = @"C:\data\chess\engines\stockfish\stockfish-windows-x86-64.exe";
+
         [Fact]
         public async Task Option()
         {
-            Engine engine = new("Stockfish", @"C:\data\stockfish_14.1_win_x64_avx2\stockfish_14.1_win_x64_avx2.exe");
+            Engine engine = new("Stockfish", enginePath);
             await engine.Start();
             Assert.True(await engine.IsReady());
             var options = await engine.GetOptions();
@@ -26,7 +28,7 @@ namespace pax.uciChessEngine.tests
         [Fact]
         public async Task Evaluation1()
         {
-            Engine engine = new("Stockfish", @"C:\data\stockfish_14.1_win_x64_avx2\stockfish_14.1_win_x64_avx2.exe");
+            Engine engine = new("Stockfish", enginePath);
             await engine.Start();
             Assert.True(await engine.IsReady());
             var options = await engine.GetOptions();
@@ -57,7 +59,7 @@ namespace pax.uciChessEngine.tests
         [Fact]
         public async Task Evaluation2()
         {
-            Engine engine = new("Stockfish", @"C:\data\stockfish_14.1_win_x64_avx2\stockfish_14.1_win_x64_avx2.exe");
+            Engine engine = new("Stockfish", enginePath);
             // Engine engine = new Engine("Houdini", @"C:\Program Files\Houdini 3 Chess\Houdini_3_Pro_x64.exe");
             await engine.Start();
             Assert.True(await engine.IsReady());

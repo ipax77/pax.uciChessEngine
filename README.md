@@ -1,10 +1,8 @@
 # Introduction
 
-C# dotnet 6 Universal Chess Interface wrapper for interacting with chess engine processes.
+C# dotnet Universal Chess Interface wrapper for interacting with chess engine processes.
 
 # Getting started
-## Prerequisites
-dotnet 6
 
 ## Installation
 You can install it with the Package Manager in your IDE or alternatively using the command line:
@@ -39,7 +37,15 @@ for (int i = 0; i < info.PvInfos.Count; i++)
 engine.Dispose();
 ```
 
-## Changelog
+## ChangeLog
 
-### v0.6.0
-Breaking changes! All engine-calls are now async
+<details open="open"><summary>v0.6.1</summary>
+
+>- ** Breaking Changes **
+>- Update to dotnet 8
+>- Logging disabled by default. Enable it with:
+`
+Engine engine = new Engine("EngineName", @"path\to\engine\binary", LogLevel.Warning);
+`
+
+</details>
