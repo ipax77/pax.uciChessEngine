@@ -35,7 +35,11 @@ public sealed class EngineService : IDisposable
     public void UpdateEngines()
     {
         // todo correct order !?
-        AvailableEngines = _configuration.GetSection("ChessEngines").GetChildren().Reverse().ToDictionary(x => x.Key, x => x.Value);
+        AvailableEngines = _configuration
+            .GetSection("ChessEngines")
+            .GetChildren()
+            .Reverse()
+            .ToDictionary(x => x.Key, x => x.Value ?? string.Empty);
     }
 
     public ICollection<Analyzes> GetAnalyzes() => Analyzes;
@@ -45,7 +49,7 @@ public sealed class EngineService : IDisposable
     public async Task<Analyzes> CreateAnalyzes(Game game, string? fen = null)
     {
         Analyzes analyzes = new(game, fen);
-        if (AvailableEngines.Any())
+        if (AvailableEngines.Count != 0)
         {
             Engine engine = new(AvailableEngines.First().Key, AvailableEngines.First().Value);
             await analyzes.AddEngine(engine).ConfigureAwait(false);
@@ -98,14 +102,8 @@ public sealed class EngineService : IDisposable
 
     public void SetEngineGameOptions(EngineGame engineGame, EngineGameOptions options)
     {
-        if (engineGame == null)
-        {
-            throw new ArgumentNullException(nameof(engineGame));
-        }
-        if (options == null)
-        {
-            throw new ArgumentNullException(nameof(options));
-        }
+        ArgumentNullException.ThrowIfNull(engineGame);
+        ArgumentNullException.ThrowIfNull(options);
         options.WhiteEngine = new KeyValuePair<string, string>(options.WhiteEngineName, AvailableEngines[options.WhiteEngineName]);
         options.BlackEngine = new KeyValuePair<string, string>(options.BlackEngineName, AvailableEngines[options.BlackEngineName]);
         engineGame.SetOptions(options);

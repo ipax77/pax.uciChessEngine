@@ -70,9 +70,9 @@ public class GameAnalyzes
         }
     }
 
-    private async Task ChunkAnalyze(IEnumerable<Move> moves, CancellationToken token)
+    private async Task ChunkAnalyze(Move[] moves, CancellationToken token)
     {
-        if (!moves.Any())
+        if (moves.Length == 0)
         {
             return;
         }
@@ -87,9 +87,9 @@ public class GameAnalyzes
 
         try
         {
-            for (int i = 0; i < moves.Count(); i++)
+            for (int i = 0; i < moves.Length; i++)
             {
-                var move = moves.ElementAt(i);
+                var move = moves[i];
                 if (token.IsCancellationRequested)
                 {
                     break;
@@ -117,7 +117,7 @@ public class GameAnalyzes
 
     private void GetVariations(EngineInfo? info, int halfMove)
     {
-        if (info != null && info.PvInfos.Any())
+        if (info != null && info.PvInfos.Count != 0)
         {
             Game pgnGame = new();
             for (int i = 0; i < halfMove; i++)

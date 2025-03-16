@@ -18,14 +18,8 @@ public record PvInfo
     public PvInfo() { }
     public PvInfo(int pvNum, Dictionary<string, int> pvValues, ICollection<string> pvMoves)
     {
-        if (pvValues == null)
-        {
-            throw new ArgumentNullException(nameof(pvValues));
-        }
-        if (pvMoves == null)
-        {
-            throw new ArgumentNullException(nameof(pvMoves));
-        }
+        ArgumentNullException.ThrowIfNull(pvValues);
+        ArgumentNullException.ThrowIfNull(pvMoves);
         MultiPv = pvNum;
         foreach (var ent in pvValues)
         {

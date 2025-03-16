@@ -36,6 +36,8 @@ public class CheatAnalyzis
 
     public async Task AnalyzeGame(Game game, CancellationToken token = default)
     {
+        ArgumentNullException.ThrowIfNull(game);
+        
         if (threads <= 0)
         {
             threads = Math.Max(Environment.ProcessorCount / 2, 1);
@@ -124,18 +126,19 @@ public class CheatAnalyzis
         }
     }
 
-    private async Task ChunkAnalyze(Game game, Channel<EngineMoveResult> channel, IEnumerable<Move> moves, CancellationToken token)
+    private async Task ChunkAnalyze(Game game, Channel<EngineMoveResult> channel, Move[] moves, CancellationToken token)
     {
-        if (!moves.Any())
+        if (moves.Length == 0)
         {
             return;
         }
-        int startPos = moves.First().HalfMoveNumber;
+        int startPos = moves[0].HalfMoveNumber;
 
         foreach (var ent in engines)
         {
-
+#pragma warning disable CA2000 // Dispose objects before losing scope
             Engine engine = new(Path.GetFileNameWithoutExtension(ent) ?? "unknown", ent);
+#pragma warning restore CA2000 // Dispose objects before losing scope
             await engine.Start().ConfigureAwait(false);
             await engine.IsReady().ConfigureAwait(false);
             await engine.GetOptions().ConfigureAwait(false);
@@ -145,9 +148,9 @@ public class CheatAnalyzis
 
             try
             {
-                for (int i = 0; i < moves.Count(); i++)
+                for (int i = 0; i < moves.Length; i++)
                 {
-                    var move = moves.ElementAt(i);
+                    var move = moves[i];
                     if (token.IsCancellationRequested)
                     {
                         break;
@@ -172,9 +175,9 @@ public class CheatAnalyzis
         }
     }
 
-    private void GetVariations(Game game, Channel<EngineMoveResult> channel, EngineInfo? info, int halfMove)
+    private static void GetVariations(Game game, Channel<EngineMoveResult> channel, EngineInfo? info, int halfMove)
     {
-        if (info != null && info.PvInfos.Any())
+        if (info != null && info.PvInfos.Count != 0)
         {
             List<Move> evals = new();
             Game pgnGame = new();
@@ -217,7 +220,7 @@ public class CheatAnalyzisEventArgs : EventArgs
     public int VariationsProcessed { get; init; }
     public int SuggestedMax { get; init; }
     public List<EngineMoveResult> Results { get; init; } = new();
-    public bool Done { get; init; } = false;
+    public bool Done { get; init; }
 }
 
 public record EngineMoveResult

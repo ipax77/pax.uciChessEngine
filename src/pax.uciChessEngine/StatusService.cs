@@ -36,7 +36,7 @@ internal static class StatusService
     internal static void RemoveEngine(Guid guid)
     {
         Engines.TryRemove(guid, out _);
-        if (!Engines.Any())
+        if (Engines.IsEmpty)
         {
             IsConsuming = false;
             tokenSource.Cancel();
@@ -127,9 +127,9 @@ internal static class StatusService
                         ents[m.Groups[1].Value] = int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
                         m = m.NextMatch();
                     }
-                    if (ents.ContainsKey("multipv"))
+                    if (ents.TryGetValue("multipv", out int value))
                     {
-                        var info = status.GetPv(ents["multipv"]);
+                        var info = status.GetPv(value);
                         info.SetValues(ents);
                         info.SetMoves(infos[1].Split(" ").ToList());
                     }

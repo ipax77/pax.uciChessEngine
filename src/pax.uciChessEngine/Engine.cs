@@ -127,6 +127,7 @@ public sealed class Engine : IDisposable
 
     public void Stop()
     {
+#pragma warning disable CA1031 // Do not catch general exception types
         try
         {
             if (engineProcess != null && !engineProcess.HasExited)
@@ -146,6 +147,7 @@ public sealed class Engine : IDisposable
         {
             engineProcess = null;
         }
+#pragma warning restore CA1031 // Do not catch general exception types
     }
 
     public async Task Send(string cmd)

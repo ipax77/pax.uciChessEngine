@@ -29,20 +29,14 @@ public sealed class Analyzes : IDisposable
 
     public async Task AddEngine(Engine engine)
     {
-        if (engine == null)
-        {
-            throw new ArgumentNullException(nameof(engine));
-        }
+        ArgumentNullException.ThrowIfNull(engine);
         Engines.Add(engine);
         await InitEngine(engine).ConfigureAwait(false);
     }
 
     public void RemoveEngine(Engine engine)
     {
-        if (engine == null)
-        {
-            throw new ArgumentNullException(nameof(engine));
-        }
+        ArgumentNullException.ThrowIfNull(engine);
         Engines.Remove(engine);
         engine.Dispose();
     }
@@ -63,10 +57,7 @@ public sealed class Analyzes : IDisposable
 
     public async Task ChangePvLine(Engine engine, bool upOrDown)
     {
-        if (engine == null)
-        {
-            throw new ArgumentNullException(nameof(engine));
-        }
+        ArgumentNullException.ThrowIfNull(engine);
         if (Engines.Contains(engine))
         {
             var pvOption = engine.Status.Options.FirstOrDefault(f => f.Name == "MultiPV");
@@ -163,7 +154,7 @@ public sealed class Analyzes : IDisposable
                         }
                     }, token).ConfigureAwait(false);
                 }).ConfigureAwait(false);
-                if (infos.Any())
+                if (!infos.IsEmpty)
                 {
                     OnEngineInfoAvailable(new EngineInfoEventArgs(infos.ToList()));
                 }
