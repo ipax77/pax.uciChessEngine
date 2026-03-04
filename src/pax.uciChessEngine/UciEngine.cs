@@ -1,6 +1,7 @@
 ﻿
 using System.Diagnostics;
 using System.Text;
+using System.Threading.Channels;
 
 namespace pax.uciChessEngine;
 
@@ -8,7 +9,8 @@ public sealed class UciEngine : IAsyncDisposable
 {
     private readonly string _binaryPath;
     private Process? _process;
-
+    private Task? _readerTask;
+    private CancellationTokenSource? _readerCts;
     private readonly SemaphoreSlim _commandLock = new(1, 1);
     private readonly CancellationTokenSource _engineCts = new();
 
@@ -19,6 +21,16 @@ public sealed class UciEngine : IAsyncDisposable
     private readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(10);
 
     public bool IsRunning => _process is { HasExited: false };
+    private Status _status = new();
+    public Status Status => _status;
+
+    private readonly Channel<string> _outputChannel =
+    Channel.CreateUnbounded<string>(
+        new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
 
     public UciEngine(string binaryPath)
     {
@@ -59,7 +71,9 @@ public sealed class UciEngine : IAsyncDisposable
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();
 
-        Console.WriteLine("WorkingDir: " + psi.WorkingDirectory);
+        _readerCts = new CancellationTokenSource();
+        _readerTask = ProcessOutputAsync(_readerCts.Token);
+
         await InitializeUciAsync(ct).ConfigureAwait(false);
     }
 
@@ -117,29 +131,23 @@ public sealed class UciEngine : IAsyncDisposable
     // ------------------------------------------------------------
     // OUTPUT HANDLING
     // ------------------------------------------------------------
+    private async Task ProcessOutputAsync(CancellationToken ct)
+    {
+        await foreach (var line in _outputChannel.Reader.ReadAllAsync(ct))
+        {
+            Parser.ParseUciString(line, _status);
+            if (_status.EngineState != EngineState.Initializing)
+            {
+                _uciOkTcs?.TrySetResult(true);
+                _readyOkTcs?.TrySetResult(true);
+            }
+        }
+    }
+
     private void OnOutput(object? sender, DataReceivedEventArgs e)
     {
-        if (e.Data != null)
-            Console.WriteLine("OUT: " + e.Data);
-        if (string.IsNullOrWhiteSpace(e.Data))
-            return;
-
-        var line = e.Data.Trim();
-
-        if (line == "uciok")
-            _uciOkTcs?.TrySetResult(true);
-
-        else if (line == "readyok")
-            _readyOkTcs?.TrySetResult(true);
-
-        else if (line.StartsWith("bestmove", StringComparison.Ordinal))
-        {
-            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length >= 2)
-                _bestMoveTcs?.TrySetResult(parts[1]);
-        }
-
-        // Optional: parse "info depth ..." lines here
+        if (!string.IsNullOrWhiteSpace(e.Data))
+            _outputChannel.Writer.TryWrite(e.Data);
     }
 
     private void OnError(object? sender, DataReceivedEventArgs e)
@@ -180,12 +188,6 @@ public sealed class UciEngine : IAsyncDisposable
 #pragma warning disable CA1031 // Do not catch general exception types
         try
         {
-            if (_process is not null)
-            {
-                _process.OutputDataReceived -= OnOutput;
-                _process.ErrorDataReceived -= OnError;
-                _process.Exited -= OnExit;
-            }
             await SendAsync("quit", CancellationToken.None);
             await _process!.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
         }
@@ -196,6 +198,12 @@ public sealed class UciEngine : IAsyncDisposable
         }
         finally
         {
+            if (_readerCts is not null) await _readerCts.CancelAsync();
+            if (_readerTask != null)
+            {
+                try { await _readerTask; }
+                catch (OperationCanceledException) { }
+            }
             Cleanup();
         }
 #pragma warning restore CA1031 // Do not catch general exception types
@@ -207,6 +215,7 @@ public sealed class UciEngine : IAsyncDisposable
 
         _process.OutputDataReceived -= OnOutput;
         _process.ErrorDataReceived -= OnError;
+        _process.Exited -= OnExit;
 
         _process.Dispose();
         _process = null;
@@ -217,6 +226,7 @@ public sealed class UciEngine : IAsyncDisposable
         await StopAsync();
         _commandLock.Dispose();
         _engineCts.Dispose();
+        _readerCts?.Dispose();
     }
 
     // ------------------------------------------------------------
