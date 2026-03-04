@@ -33,4 +33,16 @@
     <NoWarn>1591,CA2007</NoWarn>  
   </PropertyGroup>
 
+  <ItemGroup>
+    <AssemblyAttribute Include="System.CLSCompliantAttribute">
+        <_Parameter1>false</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
 </Project>

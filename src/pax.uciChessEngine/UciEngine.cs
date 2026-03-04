@@ -39,13 +39,15 @@ public sealed class UciEngine : IAsyncDisposable
         var psi = new ProcessStartInfo
         {
             FileName = _binaryPath,
+            WorkingDirectory = Path.GetDirectoryName(_binaryPath),
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardInputEncoding = Encoding.UTF8,
+            StandardOutputEncoding = Encoding.ASCII,
+            StandardInputEncoding = Encoding.ASCII,
         };
 
         _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -57,6 +59,7 @@ public sealed class UciEngine : IAsyncDisposable
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();
 
+        Console.WriteLine("WorkingDir: " + psi.WorkingDirectory);
         await InitializeUciAsync(ct).ConfigureAwait(false);
     }
 
@@ -116,6 +119,8 @@ public sealed class UciEngine : IAsyncDisposable
     // ------------------------------------------------------------
     private void OnOutput(object? sender, DataReceivedEventArgs e)
     {
+        if (e.Data != null)
+            Console.WriteLine("OUT: " + e.Data);
         if (string.IsNullOrWhiteSpace(e.Data))
             return;
 
