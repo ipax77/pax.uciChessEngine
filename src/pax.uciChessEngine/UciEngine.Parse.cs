@@ -4,31 +4,48 @@ using System.Text.RegularExpressions;
 
 namespace pax.uciChessEngine;
 
-internal static partial class Parser
+public sealed partial class UciEngine
 {
-    internal static void ParseUciString(string msg, Status status)
+    private void ParseUciString(string msg)
     {
-        if (msg.Equals("readyok", StringComparison.Ordinal) ||
-             msg.Equals("uciok", StringComparison.Ordinal))
-            status.EngineState = EngineState.Ready;
+
+        if (msg.Equals("readyok", StringComparison.Ordinal))
+        {
+            _readyOkTcs?.TrySetResult(true);
+            _status.EngineState = EngineState.Ready;
+
+        }
+
+        if (msg.Equals("uciok", StringComparison.Ordinal))
+        {
+            _status.EngineState = EngineState.Ready;
+            _uciOkTcs?.TrySetResult(true);
+        }
 
         else if (msg.StartsWith("id name", StringComparison.Ordinal))
-            status.Name = msg[8..];
+            _status.Name = msg[8..];
 
         else if (msg.StartsWith("id author", StringComparison.Ordinal))
-            status.Author = msg[10..];
+            _status.Author = msg[10..];
 
         else if (msg.StartsWith("option name", StringComparison.Ordinal))
-            UpdateOption(msg, status);
+            UpdateOption(msg, _status);
 
         else if (msg.StartsWith("info ", StringComparison.Ordinal))
-            ProcessInfoOutput(msg, status);
+            ProcessInfoOutput(msg, _status);
 
         else if (msg.StartsWith("bestmove ", StringComparison.Ordinal))
-            ProcessBestMove(msg, status);
+        {
+            ProcessBestMove(msg, _status);
+            _bestMoveTcs?.TrySetResult(_status.BestMove ?? msg);
+            OnMoveReady(new() { Move = _status.BestMove });
+        }
 
         else if (msg.StartsWith("error ", StringComparison.Ordinal))
-            status.Error = msg;
+        {
+            _status.Error = msg;
+            OnErrorRaised(new() { Error = msg });
+        }
     }
 
     private static void ProcessBestMove(string msg, Status status)

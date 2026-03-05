@@ -1,11 +1,12 @@
 ﻿
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Threading.Channels;
 
 namespace pax.uciChessEngine;
 
-public sealed class UciEngine : IAsyncDisposable
+public sealed partial class UciEngine : IAsyncDisposable
 {
     private readonly string _binaryPath;
     private Process? _process;
@@ -23,6 +24,10 @@ public sealed class UciEngine : IAsyncDisposable
     public bool IsRunning => _process is { HasExited: false };
     private Status _status = new();
     public Status Status => _status;
+
+    public event EventHandler<MoveEventArgs>? MoveReady;
+    public event EventHandler<StatusEventArgs>? StatusChanged;
+    public event EventHandler<ErrorEventArgs>? ErrorRaised;
 
     private readonly Channel<string> _outputChannel =
     Channel.CreateUnbounded<string>(
@@ -88,6 +93,26 @@ public sealed class UciEngine : IAsyncDisposable
         await WaitAsync(_readyOkTcs.Task, _defaultTimeout, ct);
     }
 
+    public async Task SetOption(string name, object value, CancellationToken token = default)
+    {
+        var myoption = _status.EngineOptions.FirstOrDefault(f => f.Name == name);
+        if (myoption != null)
+        {
+            myoption.Value = value;
+            string? svalue = myoption.Value.ToString();
+            if (svalue != null)
+            {
+#pragma warning disable CA1308 // Normalize strings to uppercase
+                await SendAsync($"setoption name {myoption.Name} value {svalue.ToString().ToLowerInvariant()}", token);
+#pragma warning restore CA1308 // Normalize strings to uppercase
+            }
+            else
+            {
+                await SendAsync($"setoption name {myoption.Name} value {myoption.Value}", token);
+            }
+        }
+    }
+
     // ------------------------------------------------------------
     // SEARCH
     // ------------------------------------------------------------
@@ -135,12 +160,7 @@ public sealed class UciEngine : IAsyncDisposable
     {
         await foreach (var line in _outputChannel.Reader.ReadAllAsync(ct))
         {
-            Parser.ParseUciString(line, _status);
-            if (_status.EngineState != EngineState.Initializing)
-            {
-                _uciOkTcs?.TrySetResult(true);
-                _readyOkTcs?.TrySetResult(true);
-            }
+            ParseUciString(line);
         }
     }
 
@@ -165,10 +185,25 @@ public sealed class UciEngine : IAsyncDisposable
         FailPendingTasks(new InvalidOperationException("Engine process exited."));
     }
 
+    private void OnMoveReady(MoveEventArgs e)
+    {
+        MoveReady?.Invoke(this, e);
+    }
+
+    private void OnStatusChanged(StatusEventArgs e)
+    {
+        StatusChanged?.Invoke(this, e);
+    }
+
+    private void OnErrorRaised(ErrorEventArgs e)
+    {
+        ErrorRaised?.Invoke(this, e);
+    }
+
     // ------------------------------------------------------------
     // SEND
     // ------------------------------------------------------------
-    private async Task SendAsync(string command, CancellationToken ct)
+    public async Task SendAsync(string command, CancellationToken ct)
     {
         if (_process?.HasExited != false)
             throw new InvalidOperationException("Engine not running.");
