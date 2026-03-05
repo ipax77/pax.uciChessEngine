@@ -6,9 +6,14 @@ namespace pax.uciChessEngine;
 
 public sealed partial class UciEngine
 {
+    public void TestParseUciString(string msg)
+    {
+        ArgumentNullException.ThrowIfNull(msg);
+        ParseUciString(msg);    
+    }
+
     private void ParseUciString(string msg)
     {
-
         if (msg.Equals("readyok", StringComparison.Ordinal))
         {
             _readyOkTcs?.TrySetResult(true);

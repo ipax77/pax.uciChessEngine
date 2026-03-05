@@ -14,7 +14,7 @@ public sealed class EngineGame : IAsyncDisposable
     private readonly List<string> _moves = [];
     private readonly ChessGame _chessGame;
     public ChessGame ChessGame => _chessGame;
-    public event EventHandler<MoveEventArgs>? MoveReady;
+    public event EventHandler<EngineMoveEventArgs>? MoveReady;
     public event EventHandler<EventArgs>? GameFinished;
 
     public EngineGame(UciEngine whiteEngine, UciEngine blackEngine, int threadsPerEngine = 2)
@@ -73,7 +73,7 @@ public sealed class EngineGame : IAsyncDisposable
             cts.Token);
 
         await engine.SendAsync(GetGoString(), cts.Token);
-        OnMoveReady(new() { Move = _moves.Last() });
+        OnMoveReady(new() { Move = _moves.Last(), Eval = engine.Status.GetEval(ChessGame.CurrentPosition.SideToMove) });
     }
 
     public async Task Stop()
@@ -96,7 +96,7 @@ public sealed class EngineGame : IAsyncDisposable
             return;
         }
         _moves.Add(e.Move);
-        var move = Uci.CreateMove(e.Move);
+        var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
         ArgumentNullException.ThrowIfNull(move, e.Move);
         var moveResult = _chessGame.TryApplyMove(move);
         if (moveResult != MoveState.Ok)
@@ -122,7 +122,7 @@ public sealed class EngineGame : IAsyncDisposable
             return;
         }
         _moves.Add(e.Move);
-        var move = Uci.CreateMove(e.Move);
+        var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
         ArgumentNullException.ThrowIfNull(move, e.Move);
         var moveResult = _chessGame.TryApplyMove(move);
         if (moveResult != MoveState.Ok)
@@ -146,7 +146,7 @@ public sealed class EngineGame : IAsyncDisposable
         OnGameFinished();
     }
 
-    private void OnMoveReady(MoveEventArgs e)
+    private void OnMoveReady(EngineMoveEventArgs e)
     {
         MoveReady?.Invoke(this, e);
     }

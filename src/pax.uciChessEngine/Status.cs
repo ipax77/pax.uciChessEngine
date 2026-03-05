@@ -1,5 +1,7 @@
 
 using System.Collections.Concurrent;
+using System.Globalization;
+using pax.chess;
 
 namespace pax.uciChessEngine;
 
@@ -29,6 +31,33 @@ public sealed class Status
             _pvs.AddOrUpdate(i, pv, (key, value) => pv);
             return pv;
         }
+    }
+
+    public Eval? GetEval(PieceColor sideToMove)
+    {
+        if (!_pvs.TryGetValue(1, out var pv))
+            return null;
+
+        var vals = pv.GetValues();
+
+        int score = vals.GetValueOrDefault("cp", 0);
+        int mate = vals.GetValueOrDefault("mate", int.MinValue);
+
+        if (mate != int.MinValue)
+        {
+            return new Eval
+            {
+                Score = 0,
+                Mate = mate
+            };
+        }
+
+        score = sideToMove == PieceColor.White ? score : -score;
+
+        return new Eval
+        {
+            Score = score
+        };
     }
 }
 
@@ -79,6 +108,8 @@ public sealed record EngineOption
 public sealed record Pv
 {
     public int MultiPv { get; init; }
+    public int? Centipawns { get; private set; }
+    public int? Mate { get; private set; }
     private Dictionary<string, int> Values { get; set; } = [];
     private List<string> Moves { get; set; } = [];
     private readonly Lock lockobject = new();
@@ -118,5 +149,84 @@ public sealed record Pv
         {
             return [.. Moves];
         }
+    }
+
+    internal void SetScore(int? cp, int? mate)
+    {
+        lock (lockobject)
+        {
+            Centipawns = cp;
+            Mate = mate;
+        }
+    }
+}
+
+public sealed record PvInfo
+{
+    public int MultiPv { get; init; }
+    public int Depth { get; init; }
+    public int SelDepth { get; init; }
+    public int Score { get; init; }
+    public int Mate { get; init; }
+    public int Nodes { get; init; }
+    public int Nps { get; init; }
+    public int HashFull { get; init; }
+    public int TbHits { get; init; }
+    public int Time { get; init; }
+    public IReadOnlyList<string> Moves { get; init; } = [];
+
+    public PvInfo() { }
+    public PvInfo(int pvNum, Dictionary<string, int> pvValues, ICollection<string> pvMoves)
+    {
+        ArgumentNullException.ThrowIfNull(pvValues);
+        ArgumentNullException.ThrowIfNull(pvMoves);
+        MultiPv = pvNum;
+        foreach (var ent in pvValues)
+        {
+            _ = ent.Key switch
+            {
+                "depth" => Depth = ent.Value,
+                "seldepth" => SelDepth = ent.Value,
+                "cp" => Score = ent.Value,
+                "mate" => Mate = ent.Value,
+                "nodes" => Nodes = ent.Value,
+                "nps" => Nps = ent.Value,
+                "hashfull" => HashFull = ent.Value,
+                "tbhits" => TbHits = ent.Value,
+                "time" => Time = ent.Value,
+                _ => 0
+            };
+        }
+        Moves = [.. pvMoves];
+    }
+
+}
+
+public sealed record Eval
+{
+    public int Score { get; init; }     // centipawns
+    public int? Mate { get; init; }     // mate distance
+    public int Depth { get; init; }
+
+    public int ChartScore
+    {
+        get
+        {
+            const int MateScore = 10000;
+
+            if (Mate.HasValue)
+                return Mate > 0 ? MateScore : -MateScore;
+
+            return Score;
+        }
+    }
+
+    public override string ToString()
+    {
+        if (Mate.HasValue)
+        {
+            return $"mate in {Mate.Value}";
+        }
+        return (Score / 100.0).ToString("N2", CultureInfo.InvariantCulture);
     }
 }

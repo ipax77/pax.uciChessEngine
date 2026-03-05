@@ -14,3 +14,9 @@ public class ErrorEventArgs : EventArgs
 {
     public string Error { get; init; } = string.Empty;
 }
+
+public class EngineMoveEventArgs : EventArgs
+{
+    public string? Move { get; init; }
+    public Eval? Eval { get; init; }
+}
