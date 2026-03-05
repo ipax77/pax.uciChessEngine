@@ -101,7 +101,8 @@ public sealed class EngineGame : IAsyncDisposable
         var moveResult = _chessGame.TryApplyMove(move);
         if (moveResult != MoveState.Ok)
         {
-            throw new InvalidOperationException(nameof(moveResult));
+            Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
+            throw new InvalidOperationException(moveResult.ToString());
         }
 
         var result = _chessGame.Result;
@@ -127,7 +128,8 @@ public sealed class EngineGame : IAsyncDisposable
         var moveResult = _chessGame.TryApplyMove(move);
         if (moveResult != MoveState.Ok)
         {
-            throw new InvalidOperationException(nameof(moveResult));
+            Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
+            throw new InvalidOperationException(moveResult.ToString());
         }
 
         var result = _chessGame.Result;
