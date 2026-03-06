@@ -5,7 +5,19 @@ using pax.chess.Extensions;
 
 namespace pax.uciChessEngine;
 
-public sealed class EngineGame : IAsyncDisposable
+public interface IEngineGame
+{
+    ChessGame ChessGame { get; }
+
+    event EventHandler<EventArgs>? GameFinished;
+    event EventHandler<EngineMoveEventArgs>? MoveReady;
+
+    ValueTask DisposeAsync();
+    Task Start(ChessClock chessClock);
+    Task StopGame();
+}
+
+public sealed class EngineGame : IAsyncDisposable, IEngineGame
 {
     private readonly UciEngine _whiteEngine;
     private readonly UciEngine _blackEngine;
@@ -17,13 +29,12 @@ public sealed class EngineGame : IAsyncDisposable
     public event EventHandler<EngineMoveEventArgs>? MoveReady;
     public event EventHandler<EventArgs>? GameFinished;
 
-    public EngineGame(UciEngine whiteEngine, UciEngine blackEngine, int threadsPerEngine = 2)
+    public EngineGame(UciEngine whiteEngine, UciEngine blackEngine, ChessGame game, int threadsPerEngine = 2)
     {
+        _chessGame = game;
         _whiteEngine = whiteEngine;
         _blackEngine = blackEngine;
         _threads = Math.Max(1, threadsPerEngine);
-        _chessGame = new();
-        _chessGame.ActivatePositionHashing();
     }
 
     public async Task Start(ChessClock chessClock)
@@ -76,7 +87,7 @@ public sealed class EngineGame : IAsyncDisposable
         OnMoveReady(new() { Move = _moves.Last(), Eval = engine.Status.GetEval(ChessGame.CurrentPosition.SideToMove) });
     }
 
-    public async Task Stop()
+    public async Task StopGame()
     {
         try
         {
@@ -144,7 +155,7 @@ public sealed class EngineGame : IAsyncDisposable
 
     private async Task Terminate()
     {
-        await Stop();
+        await StopGame();
         OnGameFinished();
     }
 

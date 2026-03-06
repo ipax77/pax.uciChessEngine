@@ -1,12 +1,29 @@
 ﻿
 using System.Diagnostics;
-using System.Globalization;
 using System.Text;
 using System.Threading.Channels;
 
 namespace pax.uciChessEngine;
 
-public sealed partial class UciEngine : IAsyncDisposable
+public interface IUciEngine
+{
+    bool IsRunning { get; }
+    Status Status { get; }
+
+    event EventHandler<ErrorEventArgs>? ErrorRaised;
+    event EventHandler<MoveEventArgs>? MoveReady;
+    event EventHandler<StatusEventArgs>? StatusChanged;
+
+    ValueTask DisposeAsync();
+    Task<string> GetBestMoveAsync(string fen, TimeSpan thinkTime, CancellationToken ct = default);
+    Task SendAsync(string command, CancellationToken ct);
+    Task SetOption(string name, object value, CancellationToken token = default);
+    Task StartAsync(CancellationToken ct = default);
+    Task StopAsync();
+    void TestParseUciString(string msg);
+}
+
+public sealed partial class UciEngine : IAsyncDisposable, IUciEngine
 {
     private readonly string _binaryPath;
     private Process? _process;
