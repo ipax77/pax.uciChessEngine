@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using pax.chess;
+using pax.chess.Analyze;
 
 namespace pax.uciChessEngine;
 
@@ -56,7 +57,8 @@ public sealed class Status
 
         return new Eval
         {
-            Score = score
+            Score = score,
+            PvInfo = new PvInfo(pv.MultiPv, vals, pv.GetMoves())
         };
     }
 }
@@ -161,7 +163,7 @@ public sealed record Pv
     }
 }
 
-public sealed record PvInfo
+public sealed record PvInfo : IPvInfo
 {
     public int MultiPv { get; init; }
     public int Depth { get; init; }
@@ -207,7 +209,7 @@ public sealed record Eval
     public int Score { get; init; }     // centipawns
     public int? Mate { get; init; }     // mate distance
     public int Depth { get; init; }
-
+    public PvInfo PvInfo { get; init; } = new();
     public int ChartScore
     {
         get

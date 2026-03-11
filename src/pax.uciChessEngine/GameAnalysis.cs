@@ -167,7 +167,7 @@ public sealed partial class GameAnalysis(string engineBinary, ChessGame game, in
             await writer.WriteAsync(new AnalysisEval
             {
                 MoveNumber = task.MoveNumber,
-                Eval = eval
+                Eval = eval,
             }, token);
         }
     }
