@@ -49,7 +49,8 @@ public sealed class Status
             return new Eval
             {
                 Score = 0,
-                Mate = mate
+                Mate = mate,
+                PvInfo = new PvInfo(pv.MultiPv, vals, pv.GetMoves())
             };
         }
 

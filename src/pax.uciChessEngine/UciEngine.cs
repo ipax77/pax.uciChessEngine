@@ -127,6 +127,9 @@ public sealed partial class UciEngine : IAsyncDisposable, IUciEngine
             {
                 await SendAsync($"setoption name {myoption.Name} value {myoption.Value}", token);
             }
+            _readyOkTcs = NewTcs<bool>();
+            await SendAsync("isready", token);
+            await WaitAsync(_readyOkTcs.Task, _defaultTimeout, token);
         }
     }
 

@@ -6,7 +6,14 @@ using pax.chess.Extensions;
 
 namespace pax.uciChessEngine;
 
-public sealed partial class GameAnalysis(string engineBinary, ChessGame game, int threads = 8) : IAsyncDisposable
+public interface IGameAnalysis
+{
+    Task<IReadOnlyList<AnalysisEval>> AnalyseGame();
+    IAsyncEnumerable<AnalysisEval> AnalyseGameStream(CancellationToken cancellationToken = default);
+    ValueTask DisposeAsync();
+}
+
+public sealed partial class GameAnalysis(string engineBinary, ChessGame game, int threads = 8) : IAsyncDisposable, IGameAnalysis
 {
     private readonly int _threads = Math.Max(1, threads);
     private readonly CancellationTokenSource cts = new();
@@ -161,7 +168,7 @@ public sealed partial class GameAnalysis(string engineBinary, ChessGame game, in
                 token);
 
             await Task.Delay(thinkTimePerMoveMs + 25, cts.Token);
-            
+
             var eval = GetEval(engine, task.SideToMove);
 
             await writer.WriteAsync(new AnalysisEval
