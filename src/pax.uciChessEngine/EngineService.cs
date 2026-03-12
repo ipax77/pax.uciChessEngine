@@ -1,9 +1,18 @@
 ﻿using pax.chess;
 using System.ComponentModel.DataAnnotations;
+using System.Runtime.CompilerServices;
 
 namespace pax.uciChessEngine;
 
-public sealed class EngineSessionProvider : IAsyncDisposable
+public interface IEngineSessionProvider
+{
+    Task<EngineLease> AcquireAsync(CancellationToken ct);
+    Task CleanupIdleAsync();
+    Guid Id();
+    ValueTask DisposeAsync();
+}
+
+public sealed class EngineSessionProvider : IAsyncDisposable, IEngineSessionProvider
 {
     private readonly List<EngineSession> _sessions = [];
     private readonly SemaphoreSlim _poolLock = new(1, 1);
@@ -11,12 +20,14 @@ public sealed class EngineSessionProvider : IAsyncDisposable
     private readonly EngineRunOptions _options;
     private readonly TimeSpan _idleTimeout;
 
+    public Guid Id() => _options.Id;
+
     public EngineSessionProvider(
-        EngineRunOptions runOptions,
-        TimeSpan idleTimeout)
+        EngineRunOptions runOptions)
     {
+        ArgumentNullException.ThrowIfNull(runOptions);
         _options = runOptions;
-        _idleTimeout = idleTimeout;
+        _idleTimeout = TimeSpan.FromMilliseconds(runOptions.IdelTimeoutMs);
     }
 
     public async Task<EngineLease> AcquireAsync(CancellationToken ct)
@@ -181,6 +192,23 @@ public sealed class EngineSession : IAsyncDisposable
 
 public static class EngineService
 {
+    private static Dictionary<Guid, IEngineSessionProvider> engineProviders = [];
+    private static readonly Lock engineProviderLock = new Lock();
+
+    public static IEngineSessionProvider GetEngineSessionProvider(EngineRunOptions engineRunOptions)
+    {
+        lock (engineProviderLock)
+        {
+            ArgumentNullException.ThrowIfNull(engineRunOptions);
+            if (!engineProviders.TryGetValue(engineRunOptions.Id, out var provider))
+            {
+                provider = new EngineSessionProvider(engineRunOptions);
+                engineProviders.Add(engineRunOptions.Id, provider);
+            }
+            return provider;
+        }
+    }
+
     public static async Task<string> GetEngineName(EngineRunOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -247,6 +275,74 @@ public static class EngineService
             throw;
         }
     }
+
+    public static async IAsyncEnumerable<List<Eval>> GetContinualEvaluation(string moves,
+                                                       PieceColor sideToMove,
+                                                       UciEngine engine,
+                                                       [EnumeratorCancellation] CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+
+        try
+        {
+            await engine.SendAsync($"position moves {moves}", token);
+
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            void Handler(object? _, MoveEventArgs __)
+                => tcs.TrySetResult();
+
+            engine.MoveReady += Handler;
+
+            try
+            {
+                await engine.SendAsync("go", token);
+
+                while (!tcs.Task.IsCompleted && !token.IsCancellationRequested)
+                {
+                    await Task.Delay(100, token);
+                    yield return GetEvaluations(engine.Status, sideToMove);
+                }
+            }
+            finally
+            {
+                engine.MoveReady -= Handler;
+            }
+
+            yield return GetEvaluations(engine.Status, sideToMove);
+
+        }
+        finally
+        {
+            await engine.SendAsync("stop", CancellationToken.None);
+        }
+    }
+
+    private static List<Eval> GetEvaluations(Status status, PieceColor sideToMove)
+    {
+        List<Eval> evals = [];
+        foreach (var pv in status.Pvs.Values.OrderBy(o => o.MultiPv))
+        {
+            var vals = pv.GetValues();
+            var moves = pv.GetMoves();
+            int score = vals.GetValueOrDefault("cp", 0);
+            int mate = vals.GetValueOrDefault("mate", 0);
+
+            if (sideToMove == PieceColor.Black)
+            {
+                score = -score;
+                mate = -mate;
+            }
+
+            evals.Add(new Eval()
+            {
+                Score = score,
+                Mate = mate,
+                PvInfo = new PvInfo(pv.MultiPv, vals, moves)
+            });
+        }
+        return evals;
+    }
 }
 
 
@@ -264,4 +360,5 @@ public sealed class EngineRunOptions
     public int HashMb { get; set; }
     [Range(1, 32)]
     public int PoolSize { get; set; } = 2;
+    public int IdelTimeoutMs { get; set; } = 2000;
 }
