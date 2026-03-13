@@ -42,23 +42,18 @@ public sealed class Status
         var vals = pv.GetValues();
 
         int score = vals.GetValueOrDefault("cp", 0);
-        int mate = vals.GetValueOrDefault("mate", int.MinValue);
+        int mate = vals.GetValueOrDefault("mate", 0);
 
-        if (mate != int.MinValue)
+        if (sideToMove == PieceColor.Black)
         {
-            return new Eval
-            {
-                Score = 0,
-                Mate = mate,
-                PvInfo = new PvInfo(pv.MultiPv, vals, pv.GetMoves())
-            };
+            score = -score;
+            mate = -mate;
         }
-
-        score = sideToMove == PieceColor.White ? score : -score;
 
         return new Eval
         {
             Score = score,
+            Mate = mate != 0 ? mate : null,
             PvInfo = new PvInfo(pv.MultiPv, vals, pv.GetMoves())
         };
     }
@@ -215,7 +210,7 @@ public sealed record Eval
     {
         get
         {
-            const int MateScore = 10000;
+            const int MateScore = 1000;
 
             if (Mate.HasValue)
                 return Mate > 0 ? MateScore : -MateScore;
