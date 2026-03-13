@@ -285,7 +285,7 @@ public static class EngineService
 
         try
         {
-            await engine.SendAsync($"position moves {moves}", token);
+            await engine.SendAsync($"position startpos moves {moves}", token);
 
             var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
