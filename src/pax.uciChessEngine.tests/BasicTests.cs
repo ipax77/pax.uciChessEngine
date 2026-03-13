@@ -123,6 +123,23 @@ public sealed class BasicTests
     }
 
     [TestMethod]
+    public async Task GameAnalysisWorksWithSessionProvider()
+    {
+        var game = PgnSerializer.Parse("1. e4 e5 2. Bc4 Bc5");
+        var options = new EngineRunOptions { BinaryPath = binaryPath, PoolSize = 2, Threads = 1, Pvs = 2 };
+        var provider = EngineService.GetEngineSessionProvider(options);
+        
+        var gameAnalysis = new GameAnalysis(provider, game, threads: 2);
+        var results = await gameAnalysis.AnalyseGame();
+        
+        Assert.HasCount(game.Moves.Count, results);
+        foreach (var result in results)
+        {
+            Assert.IsNotNull(result.Eval);
+        }
+    }
+
+    [TestMethod]
     public async Task CanDetectCheckMate()
     {
         ChessGame chessGame = PgnSerializer.Parse("1. e4 d6 2. Ne2 Nf6 3. Nbc3 g6 4. g3 Bg7 5. Bg2 O-O 6. d3 c5 7. h3 Nc6 8. O-O Ne8 9. f4 Nc7 10. Be3 Rb8 11. Qd2 b5 12. e5 Bb7 13. exd6 exd6 14. f5 Re8 15. Rae1 b4 16. Ne4 Bxb2 17. c3 bxc3 18. N2xc3 Ba6 19. fxg6 hxg6 20. Nf6+ Kh8 21. Bd4 Nxd4 22. Qh6# 1-0");

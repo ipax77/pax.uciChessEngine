@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using pax.chess;
 using pax.chess.Extensions;
+using pax.uciChessEngine.EngineServices;
 
 namespace pax.uciChessEngine;
 
@@ -13,13 +14,32 @@ public interface IGameAnalysis
     ValueTask DisposeAsync();
 }
 
-public sealed partial class GameAnalysis(string engineBinary, ChessGame game, int threads = 8) : IAsyncDisposable, IGameAnalysis
+public sealed partial class GameAnalysis : IAsyncDisposable, IGameAnalysis
 {
-    private readonly int _threads = Math.Max(1, threads);
+    private readonly string? _engineBinary;
+    private readonly IEngineSessionProvider? _sessionProvider;
+    private readonly ChessGame _game;
+    private readonly int _threads;
     private readonly CancellationTokenSource cts = new();
 
-    private readonly int thinkTimePerMoveMs = 1000;
+    private readonly int _thinkTimePerMoveMs;
     private readonly int pvs = 2;
+
+    public GameAnalysis(string engineBinary, ChessGame game, int threads = 8, int thinkTimePerMoveMs = 1000)
+    {
+        _engineBinary = engineBinary ?? throw new ArgumentNullException(nameof(engineBinary));
+        _game = game ?? throw new ArgumentNullException(nameof(game));
+        _threads = Math.Max(1, threads);
+        _thinkTimePerMoveMs = thinkTimePerMoveMs;
+    }
+
+    public GameAnalysis(IEngineSessionProvider sessionProvider, ChessGame game, int threads = 8, int thinkTimePerMoveMs = 1000)
+    {
+        _sessionProvider = sessionProvider ?? throw new ArgumentNullException(nameof(sessionProvider));
+        _game = game ?? throw new ArgumentNullException(nameof(game));
+        _threads = Math.Max(1, threads);
+        _thinkTimePerMoveMs = thinkTimePerMoveMs;
+    }
 
     public async IAsyncEnumerable<AnalysisEval> AnalyseGameStream(
     [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -27,13 +47,13 @@ public sealed partial class GameAnalysis(string engineBinary, ChessGame game, in
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancellationToken);
         var token = linkedCts.Token;
 
-        var engineMoves = game.Moves.Select(m => Uci.GetUci(m.Move)).ToList();
+        var engineMoves = _game.Moves.Select(m => Uci.GetUci(m.Move)).ToList();
 
         var workChannel = Channel.CreateBounded<AnalysisTask>(_threads * 4);
         var resultChannel = Channel.CreateUnbounded<AnalysisEval>();
 
         var workers = Enumerable.Range(0, _threads)
-            .Select(_ => StreamWorker(workChannel.Reader, resultChannel.Writer, token))
+            .Select(_ => WorkerCore(workChannel.Reader, resultChannel.Writer, token))
             .ToList();
 
         _ = Task.Run(async () =>
@@ -66,13 +86,13 @@ public sealed partial class GameAnalysis(string engineBinary, ChessGame game, in
 
     public async Task<IReadOnlyList<AnalysisEval>> AnalyseGame()
     {
-        var engineMoves = game.Moves.Select(m => Uci.GetUci(m.Move)).ToList();
+        var engineMoves = _game.Moves.Select(m => Uci.GetUci(m.Move)).ToList();
 
         var workChannel = Channel.CreateBounded<AnalysisTask>(_threads * 4);
         var resultChannel = Channel.CreateUnbounded<AnalysisEval>();
 
         var workers = Enumerable.Range(0, _threads)
-            .Select(_ => Worker(workChannel.Reader, resultChannel.Writer))
+            .Select(_ => WorkerCore(workChannel.Reader, resultChannel.Writer, cts.Token))
             .ToList();
 
         // enqueue work
@@ -96,7 +116,7 @@ public sealed partial class GameAnalysis(string engineBinary, ChessGame game, in
 
         var results = new List<AnalysisEval>();
 
-        _ = Task.Run(async () =>
+        var collector = Task.Run(async () =>
         {
             await foreach (var eval in resultChannel.Reader.ReadAllAsync(cts.Token))
                 results.Add(eval);
@@ -106,76 +126,71 @@ public sealed partial class GameAnalysis(string engineBinary, ChessGame game, in
 
         resultChannel.Writer.Complete();
 
-        await Task.Delay(50);
+        await collector;
 
         return results.OrderBy(x => x.MoveNumber).ToList();
     }
 
-    private async Task Worker(
+    private async Task WorkerCore(
         ChannelReader<AnalysisTask> reader,
-        ChannelWriter<AnalysisEval> writer)
+        ChannelWriter<AnalysisEval> writer,
+        CancellationToken token)
     {
-        await using var engine = new UciEngine(engineBinary);
-
-        await engine.StartAsync();
-        await engine.SendAsync("ucinewgame", cts.Token);
-
-        await engine.SetOption("Threads", 1, cts.Token);
-        await engine.SetOption("MultiPV", pvs, cts.Token);
-
-        await foreach (var task in reader.ReadAllAsync(cts.Token))
+        if (_sessionProvider != null)
         {
-            await engine.SendAsync(
-                $"position startpos moves {task.Position}",
-                cts.Token);
-
-            await engine.SendAsync(
-                $"go movetime {thinkTimePerMoveMs}",
-                cts.Token);
-
-            await Task.Delay(thinkTimePerMoveMs + 25, cts.Token);
-            var eval = GetEval(engine, task.SideToMove);
-
-            await writer.WriteAsync(new AnalysisEval
+            await foreach (var task in reader.ReadAllAsync(token))
             {
-                MoveNumber = task.MoveNumber,
-                Eval = eval
-            }, cts.Token);
+                await using var lease = await _sessionProvider.AcquireAsync(token);
+                var eval = await lease.Session.UseAsync(async engine =>
+                {
+                    await engine.SendAsync(
+                        $"position startpos moves {task.Position}",
+                        token);
+
+                    await engine.SendAsync(
+                        $"go movetime {_thinkTimePerMoveMs}",
+                        token);
+
+                    await Task.Delay(_thinkTimePerMoveMs + 25, token);
+                    return GetEval(engine, task.SideToMove);
+                }, token);
+
+                await writer.WriteAsync(new AnalysisEval
+                {
+                    MoveNumber = task.MoveNumber,
+                    Eval = eval
+                }, token);
+            }
         }
-    }
-
-    private async Task StreamWorker(
-    ChannelReader<AnalysisTask> reader,
-    ChannelWriter<AnalysisEval> writer,
-    CancellationToken token)
-    {
-        await using var engine = new UciEngine(engineBinary);
-
-        await engine.StartAsync(token);
-        await engine.SendAsync("ucinewgame", token);
-
-        await engine.SetOption("Threads", 1, token);
-        await engine.SetOption("MultiPV", pvs, token);
-
-        await foreach (var task in reader.ReadAllAsync(token))
+        else
         {
-            await engine.SendAsync(
-                $"position startpos moves {task.Position}",
-                token);
+            await using var engine = new UciEngine(_engineBinary!);
 
-            await engine.SendAsync(
-                $"go movetime {thinkTimePerMoveMs}",
-                token);
+            await engine.StartAsync(token);
+            await engine.SendAsync("ucinewgame", token);
 
-            await Task.Delay(thinkTimePerMoveMs + 25, cts.Token);
+            await engine.SetOption("Threads", 1, token);
+            await engine.SetOption("MultiPV", pvs, token);
 
-            var eval = GetEval(engine, task.SideToMove);
-
-            await writer.WriteAsync(new AnalysisEval
+            await foreach (var task in reader.ReadAllAsync(token))
             {
-                MoveNumber = task.MoveNumber,
-                Eval = eval,
-            }, token);
+                await engine.SendAsync(
+                    $"position startpos moves {task.Position}",
+                    token);
+
+                await engine.SendAsync(
+                    $"go movetime {_thinkTimePerMoveMs}",
+                    token);
+
+                await Task.Delay(_thinkTimePerMoveMs + 25, token);
+                var eval = GetEval(engine, task.SideToMove);
+
+                await writer.WriteAsync(new AnalysisEval
+                {
+                    MoveNumber = task.MoveNumber,
+                    Eval = eval
+                }, token);
+            }
         }
     }
 
