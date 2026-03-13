@@ -155,7 +155,7 @@ public sealed class EngineSession : IAsyncDisposable
             }
             if (_options.Pvs > 0)
             {
-                await _engine.SetOption("MultiPv", _options.Pvs, ct);
+                await _engine.SetOption("MultiPV", _options.Pvs, ct);
             }
             if (_options.HashMb > 0)
             {
@@ -247,27 +247,7 @@ public static class EngineService
 
             var status = engine.Status;
 
-            List<Eval> evals = [];
-            foreach (var pv in status.Pvs.Values.OrderBy(o => o.MultiPv))
-            {
-                var vals = pv.GetValues();
-                int score = vals.GetValueOrDefault("cp", 0);
-                int mate = vals.GetValueOrDefault("mate", 0);
-
-                if (sideToMove == PieceColor.Black)
-                {
-                    score = -score;
-                    mate = -mate;
-                }
-
-                evals.Add(new Eval()
-                {
-                    Score = score,
-                    Mate = mate,
-                    PvInfo = new PvInfo(pv.MultiPv, vals, pv.GetMoves())
-                });
-            }
-            return evals;
+            return GetEvaluations(status, sideToMove);
         }
         catch (OperationCanceledException)
         {
@@ -325,8 +305,9 @@ public static class EngineService
         {
             var vals = pv.GetValues();
             var moves = pv.GetMoves();
-            int score = vals.GetValueOrDefault("cp", 0);
-            int mate = vals.GetValueOrDefault("mate", 0);
+            var pvInfo = new PvInfo(pv.MultiPv, vals, moves);
+            var score = pvInfo.Score;
+            var mate = pvInfo.Mate;
 
             if (sideToMove == PieceColor.Black)
             {
@@ -338,7 +319,8 @@ public static class EngineService
             {
                 Score = score,
                 Mate = mate,
-                PvInfo = new PvInfo(pv.MultiPv, vals, moves)
+                Depth = pvInfo.Depth,
+                PvInfo = pvInfo,
             });
         }
         return evals;
