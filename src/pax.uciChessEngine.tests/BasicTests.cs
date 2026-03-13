@@ -1,7 +1,6 @@
-using pax.chess;
+﻿using pax.chess;
 using pax.chess.Analyze;
 using pax.uciChessEngine.EngineServices;
-using System.Reflection;
 
 namespace pax.uciChessEngine.tests;
 
