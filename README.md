@@ -19,7 +19,7 @@ The library now exposes a `UciEngine` that talks to a UCI-compatible binary and 
 ```csharp
 using pax.uciChessEngine;
 
-await using var engine = new UciEngine(@"path\to\engine.exe");
+await using var engine = new UciEngine(@"path\to\engine.binary");
 await engine.StartAsync();
 await engine.SetOption("Threads", 4);
 await engine.SendAsync("ucinewgame", CancellationToken.None);

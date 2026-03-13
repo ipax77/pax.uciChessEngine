@@ -56,7 +56,7 @@ public sealed partial class UciEngine
     private static void ProcessBestMove(string msg, Status status)
     {
         var match = BestMoveGrx().Match(msg);
-        status.BestMove = match.Success ? match.Groups[1].Value : msg[9..];
+        status.BestMove = match.Success ? match.Groups[1].Value : null;
 
         status.Ponder = match.Success ? match.Groups[2].Value : null;
 

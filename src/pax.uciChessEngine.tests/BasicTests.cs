@@ -121,4 +121,20 @@ public sealed class BasicTests
 
         Assert.AreNotSame(firstSession, lease2.Session);
     }
+
+    [TestMethod]
+    public async Task CanDetectCheckMate()
+    {
+        ChessGame chessGame = PgnSerializer.Parse("1. e4 d6 2. Ne2 Nf6 3. Nbc3 g6 4. g3 Bg7 5. Bg2 O-O 6. d3 c5 7. h3 Nc6 8. O-O Ne8 9. f4 Nc7 10. Be3 Rb8 11. Qd2 b5 12. e5 Bb7 13. exd6 exd6 14. f5 Re8 15. Rae1 b4 16. Ne4 Bxb2 17. c3 bxc3 18. N2xc3 Ba6 19. fxg6 hxg6 20. Nf6+ Kh8 21. Bd4 Nxd4 22. Qh6# 1-0");
+        AnalysisBoard analysisBoard = new(chessGame);        
+        await using var engine = new UciEngine(binaryPath);
+        await engine.StartAsync();
+        await engine.SetOption("Threads", 2);
+        await engine.SetOption("MultiPV", 2);
+
+        var fen = FenSerializer.Serialize(chessGame.CurrentPosition);
+        var results = await EngineService
+            .GetEvaluation(fen, chessGame.CurrentPosition.SideToMove, TimeSpan.FromMilliseconds(200), engine);
+        Assert.HasCount(0, results);
+    }
 }
