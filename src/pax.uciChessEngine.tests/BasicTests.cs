@@ -1,5 +1,7 @@
-﻿using pax.chess;
+using pax.chess;
 using pax.chess.Analyze;
+using pax.uciChessEngine.EngineServices;
+using System.Reflection;
 
 namespace pax.uciChessEngine.tests;
 
@@ -57,5 +59,67 @@ public sealed class BasicTests
         Assert.HasCount(2, results);
         var eval1 = results[0];
         Assert.IsGreaterThan(0, eval1.Depth);
+    }
+
+    [TestMethod]
+    public void ReturnsSameProviderForSameId()
+    {
+        var options = new EngineRunOptions { BinaryPath = binaryPath, PoolSize = 1 };
+
+        var provider1 = EngineService.GetEngineSessionProvider(options);
+        var provider2 = EngineService.GetEngineSessionProvider(options);
+
+        Assert.AreSame(provider1, provider2);
+    }
+
+    [TestMethod]
+    public async Task ReusesSessionAfterLeaseDisposal()
+    {
+        var options = new EngineRunOptions { BinaryPath = binaryPath, PoolSize = 1, IdelTimeoutMs = 10_000 };
+        var provider = EngineService.GetEngineSessionProvider(options);
+
+        EngineSession firstSession;
+        await using (var lease = await provider.AcquireAsync(CancellationToken.None))
+        {
+            firstSession = lease.Session;
+        }
+
+        await using var lease2 = await provider.AcquireAsync(CancellationToken.None);
+        Assert.AreSame(firstSession, lease2.Session);
+    }
+
+    [TestMethod]
+    public async Task SetsLastUsedOnLeaseDispose()
+    {
+        var options = new EngineRunOptions { BinaryPath = binaryPath, PoolSize = 1, IdelTimeoutMs = 10_000 };
+        var provider = EngineService.GetEngineSessionProvider(options);
+
+        await using var lease = await provider.AcquireAsync(CancellationToken.None);
+        var session = lease.Session;
+        var initial = session.LastUsedUtc;
+
+        await lease.DisposeAsync();
+
+        Assert.IsTrue(session.LastUsedUtc > initial);
+    }
+
+    [TestMethod]
+    public async Task CleanupIdleRemovesExpiredSessions()
+    {
+        var options = new EngineRunOptions { BinaryPath = binaryPath, PoolSize = 1, IdelTimeoutMs = 10 };
+        var provider = EngineService.GetEngineSessionProvider(options);
+
+        EngineSession firstSession;
+        await using (var lease = await provider.AcquireAsync(CancellationToken.None))
+        {
+            firstSession = lease.Session;
+        }
+
+        await Task.Delay(30);
+        await provider.CleanupIdleAsync();
+
+        await using var lease2 = await provider.AcquireAsync(CancellationToken.None);
+
+        Assert.AreNotSame(firstSession, lease2.Session);
     }
 }
