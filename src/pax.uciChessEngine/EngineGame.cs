@@ -23,18 +23,26 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
     private readonly UciEngine _blackEngine;
     private readonly CancellationTokenSource cts = new();
     private readonly int _threads;
-    private readonly List<string> _moves = [];
+    private readonly List<string> _moves;
+    private readonly string _startPosition;
     private readonly ChessGame _chessGame;
     public ChessGame ChessGame => _chessGame;
     public event EventHandler<EngineMoveEventArgs>? MoveReady;
     public event EventHandler<EventArgs>? GameFinished;
 
-    public EngineGame(UciEngine whiteEngine, UciEngine blackEngine, ChessGame game, int threadsPerEngine = 2)
+    public EngineGame(
+        UciEngine whiteEngine,
+        UciEngine blackEngine,
+        ChessGame game,
+        int threadsPerEngine = 2,
+        IEnumerable<string>? initialMoves = null)
     {
         _chessGame = game;
         _whiteEngine = whiteEngine;
         _blackEngine = blackEngine;
         _threads = Math.Max(1, threadsPerEngine);
+        _startPosition = FenSerializer.Serialize(_chessGame.InitialPosition);
+        _moves = new List<string>(initialMoves ?? Enumerable.Empty<string>());
     }
 
     public async Task Start(ChessClock chessClock)
@@ -53,11 +61,16 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
         _whiteEngine.MoveReady += WhiteMoveReady;
         _blackEngine.MoveReady += BlackMoveReady;
 
-        await _whiteEngine.SendAsync("position startpos", cts.Token);
-        await _blackEngine.SendAsync("position startpos", cts.Token);
+        var positionCommand = BuildPositionCommand();
+        await _whiteEngine.SendAsync(positionCommand, cts.Token);
+        await _blackEngine.SendAsync(positionCommand, cts.Token);
 
-        await _whiteEngine.SendAsync(GetGoString(), cts.Token);
-        _chessGame.Clock?.Start();
+        var toMove = _chessGame.CurrentPosition.SideToMove;
+        await (toMove == PieceColor.White
+            ? _whiteEngine.SendAsync(GetGoString(), cts.Token)
+            : _blackEngine.SendAsync(GetGoString(), cts.Token));
+
+        _chessGame.Clock?.Start(toMove);
     }
 
     private string GetGoString()
@@ -79,12 +92,22 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
     {
         string movesString = string.Join(" ", _moves);
 
-        await engine.SendAsync(
-            $"position startpos moves {movesString}",
-            cts.Token);
+        await engine.SendAsync(BuildPositionCommand(movesString), cts.Token);
 
         await engine.SendAsync(GetGoString(), cts.Token);
         OnMoveReady(new() { Move = _moves.Last(), Eval = engine.Status.GetEval(ChessGame.CurrentPosition.SideToMove) });
+    }
+
+    private string BuildPositionCommand(string? moves = null)
+    {
+        var sb = new StringBuilder($"position fen {_startPosition}");
+        var commandMoves = moves ?? string.Join(" ", _moves);
+        if (!string.IsNullOrWhiteSpace(commandMoves))
+        {
+            sb.Append(" moves ");
+            sb.Append(commandMoves);
+        }
+        return sb.ToString();
     }
 
     public async Task StopGame()
