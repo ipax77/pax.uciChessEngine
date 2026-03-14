@@ -105,10 +105,6 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
         {
             // Expected when game is stopped; ignore.
         }
-        catch (TaskCanceledException)
-        {
-            // Expected when game is stopped; ignore.
-        }
     }
 
     private string BuildPositionCommand(string? moves = null)
@@ -169,9 +165,6 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
         catch (OperationCanceledException)
         {
         }
-        catch (TaskCanceledException)
-        {
-        }
     }
 
     private async void WhiteMoveReady(object? sender, MoveEventArgs e)
@@ -206,9 +199,6 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
         catch (OperationCanceledException)
         {
         }
-        catch (TaskCanceledException)
-        {
-        }
     }
 
     private async Task Terminate()
@@ -218,9 +208,6 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
             await StopGame();
         }
         catch (OperationCanceledException)
-        {
-        }
-        catch (TaskCanceledException)
         {
         }
         OnGameFinished();
