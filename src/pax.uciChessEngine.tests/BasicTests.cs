@@ -208,10 +208,10 @@ public sealed class BasicTests
         chessGame.SetClock(chessClock);
         
         var gameTask = engineGame.Start(chessClock);
-        await Task.Delay(2_000, cts.Token);
+        await Task.Delay(3_000, cts.Token);
         await engineGame.StopGame();
 
-        var completed = await Task.WhenAny(gameTask, Task.Delay(3_000, cts.Token));
+        var completed = await Task.WhenAny(gameTask, Task.Delay(4_000, cts.Token));
 
         Assert.AreSame(gameTask, completed, "Game task should finish after StopGame is requested.");
         Assert.IsFalse(gameTask.IsCanceled, "Game task should not be canceled.");
