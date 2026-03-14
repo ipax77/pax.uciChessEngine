@@ -90,12 +90,25 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
 
     private async Task Move(UciEngine engine)
     {
+        if (cts.IsCancellationRequested)
+            return;
+
         string movesString = string.Join(" ", _moves);
 
-        await engine.SendAsync(BuildPositionCommand(movesString), cts.Token);
-
-        await engine.SendAsync(GetGoString(), cts.Token);
-        OnMoveReady(new() { Move = _moves.Last(), Eval = engine.Status.GetEval(ChessGame.CurrentPosition.SideToMove) });
+        try
+        {
+            await engine.SendAsync(BuildPositionCommand(movesString), cts.Token);
+            await engine.SendAsync(GetGoString(), cts.Token);
+            OnMoveReady(new() { Move = _moves.Last(), Eval = engine.Status.GetEval(ChessGame.CurrentPosition.SideToMove) });
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when game is stopped; ignore.
+        }
+        catch (TaskCanceledException)
+        {
+            // Expected when game is stopped; ignore.
+        }
     }
 
     private string BuildPositionCommand(string? moves = null)
@@ -125,60 +138,91 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
 
     private async void BlackMoveReady(object? sender, MoveEventArgs e)
     {
+        if (cts.IsCancellationRequested)
+            return;
         if (string.IsNullOrWhiteSpace(e.Move))
         {
             return;
         }
-        _moves.Add(e.Move);
-        var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
-        ArgumentNullException.ThrowIfNull(move, e.Move);
-        var moveResult = _chessGame.TryApplyMove(move);
-        if (moveResult != MoveState.Ok)
+        try
         {
-            Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
-            throw new InvalidOperationException(moveResult.ToString());
-        }
+            _moves.Add(e.Move);
+            var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
+            ArgumentNullException.ThrowIfNull(move, e.Move);
+            var moveResult = _chessGame.TryApplyMove(move);
+            if (moveResult != MoveState.Ok)
+            {
+                Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
+                throw new InvalidOperationException(moveResult.ToString());
+            }
 
-        var result = _chessGame.Result;
-        if (result != null)
+            var result = _chessGame.Result;
+            if (result != null)
+            {
+                await Terminate();
+                return;
+            }
+
+            _chessGame.Clock?.ApplyMove(PieceColor.Black);
+            await Move(_whiteEngine);
+        }
+        catch (OperationCanceledException)
         {
-            await Terminate();
-            return;
         }
-
-        _chessGame.Clock?.ApplyMove(PieceColor.Black);
-        await Move(_whiteEngine);
+        catch (TaskCanceledException)
+        {
+        }
     }
 
     private async void WhiteMoveReady(object? sender, MoveEventArgs e)
     {
+        if (cts.IsCancellationRequested)
+            return;
         if (string.IsNullOrWhiteSpace(e.Move))
         {
             return;
         }
-        _moves.Add(e.Move);
-        var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
-        ArgumentNullException.ThrowIfNull(move, e.Move);
-        var moveResult = _chessGame.TryApplyMove(move);
-        if (moveResult != MoveState.Ok)
+        try
         {
-            Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
-            throw new InvalidOperationException(moveResult.ToString());
-        }
+            _moves.Add(e.Move);
+            var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
+            ArgumentNullException.ThrowIfNull(move, e.Move);
+            var moveResult = _chessGame.TryApplyMove(move);
+            if (moveResult != MoveState.Ok)
+            {
+                Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
+                throw new InvalidOperationException(moveResult.ToString());
+            }
 
-        var result = _chessGame.Result;
-        if (result != null)
-        {
-            await Terminate();
-            return;
+            var result = _chessGame.Result;
+            if (result != null)
+            {
+                await Terminate();
+                return;
+            }
+            _chessGame.Clock?.ApplyMove(PieceColor.White);
+            await Move(_blackEngine);
         }
-        _chessGame.Clock?.ApplyMove(PieceColor.White);
-        await Move(_blackEngine);
+        catch (OperationCanceledException)
+        {
+        }
+        catch (TaskCanceledException)
+        {
+        }
     }
 
     private async Task Terminate()
     {
-        await StopGame();
+        try
+        {
+            await StopGame();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (TaskCanceledException)
+        {
+        }
         OnGameFinished();
     }
 
