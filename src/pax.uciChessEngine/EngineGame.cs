@@ -47,30 +47,37 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
 
     public async Task Start(ChessClock chessClock)
     {
-        _chessGame.SetClock(chessClock);
-        var t1 = _whiteEngine.StartAsync();
-        var t2 = _blackEngine.StartAsync();
-        await Task.WhenAll(t1, t2);
+        try
+        {
+            _chessGame.SetClock(chessClock);
+            var t1 = _whiteEngine.StartAsync();
+            var t2 = _blackEngine.StartAsync();
+            await Task.WhenAll(t1, t2);
 
-        await _whiteEngine.SendAsync("ucinewgame", cts.Token);
-        await _blackEngine.SendAsync("ucinewgame", cts.Token);
+            await _whiteEngine.SendAsync("ucinewgame", cts.Token);
+            await _blackEngine.SendAsync("ucinewgame", cts.Token);
 
-        await _whiteEngine.SetOption("Threads", _threads, cts.Token);
-        await _blackEngine.SetOption("Threads", _threads, cts.Token);
+            await _whiteEngine.SetOption("Threads", _threads, cts.Token);
+            await _blackEngine.SetOption("Threads", _threads, cts.Token);
 
-        _whiteEngine.MoveReady += WhiteMoveReady;
-        _blackEngine.MoveReady += BlackMoveReady;
+            _whiteEngine.MoveReady += WhiteMoveReady;
+            _blackEngine.MoveReady += BlackMoveReady;
 
-        var positionCommand = BuildPositionCommand();
-        await _whiteEngine.SendAsync(positionCommand, cts.Token);
-        await _blackEngine.SendAsync(positionCommand, cts.Token);
+            var positionCommand = BuildPositionCommand();
+            await _whiteEngine.SendAsync(positionCommand, cts.Token);
+            await _blackEngine.SendAsync(positionCommand, cts.Token);
 
-        var toMove = _chessGame.CurrentPosition.SideToMove;
-        await (toMove == PieceColor.White
-            ? _whiteEngine.SendAsync(GetGoString(), cts.Token)
-            : _blackEngine.SendAsync(GetGoString(), cts.Token));
+            var toMove = _chessGame.CurrentPosition.SideToMove;
+            await (toMove == PieceColor.White
+                ? _whiteEngine.SendAsync(GetGoString(), cts.Token)
+                : _blackEngine.SendAsync(GetGoString(), cts.Token));
 
-        _chessGame.Clock?.Start(toMove);
+            _chessGame.Clock?.Start(toMove);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // StopGame requested during startup; swallow to allow graceful shutdown.
+        }
     }
 
     private string GetGoString()
@@ -145,7 +152,8 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
             _moves.Add(e.Move);
             var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
             ArgumentNullException.ThrowIfNull(move, e.Move);
-            var moveResult = _chessGame.TryApplyMove(move);
+            var san = PgnSerializer.ToSan(move, ChessGame.CurrentPosition);
+            var moveResult = _chessGame.TryApplyMove(move, san);
             if (moveResult != MoveState.Ok)
             {
                 Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
@@ -180,7 +188,8 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
             _moves.Add(e.Move);
             var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
             ArgumentNullException.ThrowIfNull(move, e.Move);
-            var moveResult = _chessGame.TryApplyMove(move);
+            var san = PgnSerializer.ToSan(move, ChessGame.CurrentPosition);
+            var moveResult = _chessGame.TryApplyMove(move, san);
             if (moveResult != MoveState.Ok)
             {
                 Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));

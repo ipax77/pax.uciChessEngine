@@ -171,4 +171,51 @@ public sealed class BasicTests
         var nonNullEvalsCount = results.Count(c => c.Eval != null);
         Assert.AreEqual(3, nonNullEvalsCount);
     }
+
+    [TestMethod]
+    public async Task CanCancelGracefully()
+    {
+        using CancellationTokenSource cts = new();
+
+        var engine1 = new UciEngine(binaryPath);
+        var engine2 = new UciEngine(binaryPath);
+        var chessGame = new ChessGame();
+        var engineGame = new EngineGame(engine1, engine2, chessGame);
+        var chessClock = new ChessClock(TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(1));
+        chessGame.SetClock(chessClock);
+        
+        var gameTask = engineGame.Start(chessClock);
+        await Task.Delay(100, cts.Token);
+        await engineGame.StopGame();
+
+        var completed = await Task.WhenAny(gameTask, Task.Delay(1_000, cts.Token));
+
+        Assert.AreSame(gameTask, completed, "Game task should finish after StopGame is requested.");
+        Assert.IsFalse(gameTask.IsCanceled, "Game task should not be canceled.");
+        Assert.IsFalse(gameTask.IsFaulted, gameTask.Exception?.ToString());
+    }
+
+        [TestMethod]
+    public async Task CanCancelGracefullyDuringCalculation()
+    {
+        using CancellationTokenSource cts = new();
+
+        var engine1 = new UciEngine(binaryPath);
+        var engine2 = new UciEngine(binaryPath);
+        var chessGame = new ChessGame();
+        var engineGame = new EngineGame(engine1, engine2, chessGame);
+        var chessClock = new ChessClock(TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(1));
+        chessGame.SetClock(chessClock);
+        
+        var gameTask = engineGame.Start(chessClock);
+        await Task.Delay(2_000, cts.Token);
+        await engineGame.StopGame();
+
+        var completed = await Task.WhenAny(gameTask, Task.Delay(3_000, cts.Token));
+
+        Assert.AreSame(gameTask, completed, "Game task should finish after StopGame is requested.");
+        Assert.IsFalse(gameTask.IsCanceled, "Game task should not be canceled.");
+        Assert.IsFalse(gameTask.IsFaulted, gameTask.Exception?.ToString());
+    }
+
 }
