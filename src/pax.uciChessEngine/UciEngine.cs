@@ -15,7 +15,7 @@ public interface IUciEngine
     event EventHandler<StatusEventArgs>? StatusChanged;
 
     ValueTask DisposeAsync();
-    Task<string> GetBestMoveAsync(string fen, TimeSpan thinkTime, CancellationToken ct = default);
+    Task<string?> GetBestMoveAsync(string fen, TimeSpan thinkTime, CancellationToken ct = default);
     Task SendAsync(string command, CancellationToken ct);
     Task SetOption(string name, object value, CancellationToken token = default);
     Task StartAsync(CancellationToken ct = default);
@@ -34,7 +34,7 @@ public sealed partial class UciEngine : IAsyncDisposable, IUciEngine
 
     private TaskCompletionSource<bool>? _uciOkTcs;
     private TaskCompletionSource<bool>? _readyOkTcs;
-    private TaskCompletionSource<string>? _bestMoveTcs;
+    private TaskCompletionSource<string?>? _bestMoveTcs;
 
     private readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(10);
 
@@ -136,7 +136,7 @@ public sealed partial class UciEngine : IAsyncDisposable, IUciEngine
     // ------------------------------------------------------------
     // SEARCH
     // ------------------------------------------------------------
-    public async Task<string> GetBestMoveAsync(
+    public async Task<string?> GetBestMoveAsync(
         string fen,
         TimeSpan thinkTime,
         CancellationToken ct = default)
@@ -147,7 +147,7 @@ public sealed partial class UciEngine : IAsyncDisposable, IUciEngine
         await _commandLock.WaitAsync(ct);
         try
         {
-            _bestMoveTcs = NewTcs<string>();
+            _bestMoveTcs = NewTcs<string?>();
 
             await SendAsync("ucinewgame", ct);
             await SendAsync($"position fen {fen}", ct);

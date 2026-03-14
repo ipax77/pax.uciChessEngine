@@ -39,6 +39,9 @@ public sealed class Status
         if (!_pvs.TryGetValue(1, out var pv))
             return null;
 
+        if (EngineState == EngineState.BestMove && string.IsNullOrEmpty(BestMove))
+            return null;
+
         var vals = pv.GetValues();
 
         int score = vals.GetValueOrDefault("cp", 0);

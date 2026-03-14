@@ -152,7 +152,7 @@ public sealed partial class GameAnalysis : IAsyncDisposable, IGameAnalysis
                         token);
 
                     await Task.Delay(_thinkTimePerMoveMs + 25, token);
-                    return GetEval(engine, task.SideToMove);
+                    return engine.Status.GetEval(task.SideToMove);
                 }, token);
 
                 await writer.WriteAsync(new AnalysisEval
@@ -183,7 +183,7 @@ public sealed partial class GameAnalysis : IAsyncDisposable, IGameAnalysis
                     token);
 
                 await Task.Delay(_thinkTimePerMoveMs + 25, token);
-                var eval = GetEval(engine, task.SideToMove);
+                var eval = engine.Status.GetEval(task.SideToMove);
 
                 await writer.WriteAsync(new AnalysisEval
                 {
@@ -192,11 +192,6 @@ public sealed partial class GameAnalysis : IAsyncDisposable, IGameAnalysis
                 }, token);
             }
         }
-    }
-
-    private static Eval? GetEval(UciEngine engine, PieceColor sideToMove)
-    {
-        return engine.Status.GetEval(sideToMove);
     }
 
     public async ValueTask DisposeAsync()

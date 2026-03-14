@@ -9,7 +9,7 @@ public sealed partial class UciEngine
     public void TestParseUciString(string msg)
     {
         ArgumentNullException.ThrowIfNull(msg);
-        ParseUciString(msg);    
+        ParseUciString(msg);
     }
 
     private void ParseUciString(string msg)
@@ -42,7 +42,7 @@ public sealed partial class UciEngine
         else if (msg.StartsWith("bestmove ", StringComparison.Ordinal))
         {
             ProcessBestMove(msg, _status);
-            _bestMoveTcs?.TrySetResult(_status.BestMove ?? msg);
+            _bestMoveTcs?.TrySetResult(_status.BestMove);
             OnMoveReady(new() { Move = _status.BestMove });
         }
 
@@ -56,14 +56,16 @@ public sealed partial class UciEngine
     private static void ProcessBestMove(string msg, Status status)
     {
         var match = BestMoveGrx().Match(msg);
-        status.BestMove = match.Success ? match.Groups[1].Value : null;
 
-        status.Ponder = match.Success ? match.Groups[2].Value : null;
+        if (!match.Success)
+            return;
 
-        if (!string.IsNullOrEmpty(status.BestMove))
-        {
-            status.EngineState = EngineState.BestMove;
-        }
+        var best = match.Groups[1].Value;
+
+        status.BestMove = best == "(none)" ? null : best;
+        status.Ponder = match.Groups[2].Success ? match.Groups[2].Value : null;
+
+        status.EngineState = EngineState.BestMove;
     }
 
     private static void ProcessInfoOutput(string msg, Status status)
@@ -148,7 +150,7 @@ public sealed partial class UciEngine
         };
     }
 
-    [GeneratedRegex(@"^bestmove\s(.*)\sponder\s(.*)$")]
+    [GeneratedRegex(@"^bestmove\s+(\S+)(?:\s+ponder\s+(\S+))?$")]
     private static partial Regex BestMoveGrx();
     [GeneratedRegex(@"\s(\w+)\s(\-?\d+)")]
     private static partial Regex ValueGrx();
