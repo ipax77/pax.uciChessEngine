@@ -12,7 +12,7 @@ public enum EngineMatchStatus
     Error
 }
 
-public sealed class EngineMatchSummary
+public sealed class EngineMatchSummaryEventArgs : EventArgs
 {
     public Guid Id { get; } = Guid.NewGuid();
     public int Index { get; init; }
@@ -36,27 +36,34 @@ public sealed record EngineMatchBatchRequest(
 
 public sealed class EngineMatchBatch : IAsyncDisposable
 {
-    private readonly List<EngineMatchSummary> _matches = new();
+    private readonly List<EngineMatchSummaryEventArgs> _matches = new();
     private readonly Dictionary<Guid, EngineMatchRuntime> _activeRuntimes = new();
     private readonly object _lock = new();
+#pragma warning disable CA2213 // Disposable fields should be disposed
+
     private CancellationTokenSource? _cts;
+#pragma warning restore CA2213 // Disposable fields should be disposed
+
     private bool _isRunning;
 
-    public event EventHandler<EngineMatchSummary>? MatchUpdated;
+    public event EventHandler<EngineMatchSummaryEventArgs>? MatchUpdated;
     public event EventHandler? BatchFinished;
 
-    public IReadOnlyList<EngineMatchSummary> Matches => _matches;
+    public IReadOnlyList<EngineMatchSummaryEventArgs> Matches => _matches;
     public bool IsRunning => _isRunning;
     public int MaxConcurrent { get; private set; } = 1;
 
     public static int ComputeMaxConcurrent(EngineRunOptions white, EngineRunOptions black)
     {
+        ArgumentNullException.ThrowIfNull(white);
+        ArgumentNullException.ThrowIfNull(black);
         var poolSize = Math.Min(white.PoolSize, black.PoolSize);
         return Math.Max(1, poolSize / 2);
     }
 
     public async Task RunAsync(EngineMatchBatchRequest request, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(request);
         if (_isRunning)
             throw new InvalidOperationException("Match batch already running.");
 
@@ -78,7 +85,7 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             var matchWhite = reverse ? request.BlackEngine : request.WhiteEngine;
             var matchBlack = reverse ? request.WhiteEngine : request.BlackEngine;
 
-            var summary = new EngineMatchSummary
+            var summary = new EngineMatchSummaryEventArgs
             {
                 Index = index,
                 WhiteEngine = !string.IsNullOrEmpty(matchWhite.Name) ? matchWhite.Name! : matchWhite.BinaryPath,
@@ -89,7 +96,11 @@ public sealed class EngineMatchBatch : IAsyncDisposable
 
             _matches.Add(summary);
             NotifyMatchUpdated(summary);
+#pragma warning disable CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
+
             tasks.Add(RunMatchAsync(summary, matchWhite, matchBlack, request, semaphore, token));
+#pragma warning restore CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
+
         }
 
         try
@@ -102,6 +113,7 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             _cts.Dispose();
             _cts = null;
             BatchFinished?.Invoke(this, EventArgs.Empty);
+            semaphore.Dispose();
         }
     }
 
@@ -110,7 +122,7 @@ public sealed class EngineMatchBatch : IAsyncDisposable
         if (!_isRunning || _cts is null)
             return;
 
-        _cts.Cancel();
+        await _cts.CancelAsync();
         List<EngineMatchRuntime> runtimes;
         lock (_lock)
         {
@@ -119,6 +131,8 @@ public sealed class EngineMatchBatch : IAsyncDisposable
 
         foreach (var runtime in runtimes)
         {
+#pragma warning disable CA1031 // Do not catch general exception types
+
             try
             {
                 await runtime.EngineGame.StopGame();
@@ -130,12 +144,14 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             {
                 Console.WriteLine($"failed stopping match: {ex.Message}");
             }
+#pragma warning restore CA1031 // Do not catch general exception types
+
             runtime.Completion.TrySetResult();
         }
     }
 
     private async Task RunMatchAsync(
-        EngineMatchSummary summary,
+        EngineMatchSummaryEventArgs summary,
         EngineRunOptions white,
         EngineRunOptions black,
         EngineMatchBatchRequest request,
@@ -153,6 +169,8 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             return;
         }
 
+#pragma warning disable CA1031 // Do not catch general exception types
+
         try
         {
             if (cancellationToken.IsCancellationRequested)
@@ -164,14 +182,14 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             summary.Status = EngineMatchStatus.Running;
             NotifyMatchUpdated(summary);
 
-            var clock = new ChessClock(request.BaseTime, request.Increment);
+            using var clock = new ChessClock(request.BaseTime, request.Increment);
             var game = new ChessGame(request.StartPosition.Clone(), new GameMetadata(), clock);
             game.ActivatePositionHashing();
 
-            var whiteEngine = new UciEngine(white.BinaryPath);
-            var blackEngine = new UciEngine(black.BinaryPath);
+            await using var whiteEngine = new UciEngine(white.BinaryPath);
+            await using var blackEngine = new UciEngine(black.BinaryPath);
             var threads = Math.Max(1, Math.Max(white.Threads, black.Threads));
-            var engineGame = new EngineGame(whiteEngine, blackEngine, game, threads);
+            await using var engineGame = new EngineGame(whiteEngine, blackEngine, game, threads);
 
             var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             engineGame.GameFinished += (_, _) => completion.TrySetResult();
@@ -186,8 +204,6 @@ public sealed class EngineMatchBatch : IAsyncDisposable
                 : EngineMatchStatus.Finished;
             summary.Game = game;
             NotifyMatchUpdated(summary);
-
-            await engineGame.DisposeAsync();
         }
         catch (OperationCanceledException)
         {
@@ -205,6 +221,8 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             UnregisterRuntime(summary.Id);
             semaphore.Release();
         }
+#pragma warning restore CA1031 // Do not catch general exception types
+
     }
 
     private void RegisterRuntime(Guid id, EngineGame engineGame, TaskCompletionSource completion)
@@ -223,7 +241,7 @@ public sealed class EngineMatchBatch : IAsyncDisposable
         }
     }
 
-    private void NotifyMatchUpdated(EngineMatchSummary summary)
+    private void NotifyMatchUpdated(EngineMatchSummaryEventArgs summary)
     {
         MatchUpdated?.Invoke(this, summary);
     }
@@ -231,7 +249,9 @@ public sealed class EngineMatchBatch : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_cts is not null)
+        {
             await StopAsync();
+        }
     }
 
     private sealed record EngineMatchRuntime(EngineGame EngineGame, TaskCompletionSource Completion);
