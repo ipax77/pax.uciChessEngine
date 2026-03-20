@@ -36,8 +36,8 @@ public sealed record EngineMatchBatchRequest(
 
 public sealed class EngineMatchBatch : IAsyncDisposable
 {
-    private readonly List<EngineMatchSummaryEventArgs> _matches = new();
-    private readonly Dictionary<Guid, EngineMatchRuntime> _activeRuntimes = new();
+    private readonly List<EngineMatchSummaryEventArgs> _matches = [];
+    private readonly Dictionary<Guid, EngineMatchRuntime> _activeRuntimes = [];
     private readonly object _lock = new();
 #pragma warning disable CA2213 // Disposable fields should be disposed
 
@@ -183,8 +183,7 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             NotifyMatchUpdated(summary);
 
             using var clock = new ChessClock(request.BaseTime, request.Increment);
-            var game = new ChessGame(request.StartPosition.Clone(), new GameMetadata(), clock);
-            game.ActivatePositionHashing();
+            var game = new ChessGame(request.StartPosition.Clone(), new() {  Clock = clock });
 
             await using var whiteEngine = new UciEngine(white.BinaryPath);
             await using var blackEngine = new UciEngine(black.BinaryPath);
@@ -195,7 +194,7 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             engineGame.GameFinished += (_, _) => completion.TrySetResult();
 
             RegisterRuntime(summary.Id, engineGame, completion);
-            await engineGame.Start(clock);
+            await engineGame.Start();
             await completion.Task;
 
             summary.Result = game.Result;

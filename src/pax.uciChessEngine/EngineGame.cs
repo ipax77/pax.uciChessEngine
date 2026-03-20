@@ -13,7 +13,7 @@ public interface IEngineGame
     event EventHandler<EngineMoveEventArgs>? MoveReady;
 
     ValueTask DisposeAsync();
-    Task Start(ChessClock chessClock);
+    Task Start();
     Task StopGame();
 }
 
@@ -45,11 +45,10 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
         _moves = new List<string>(initialMoves ?? Enumerable.Empty<string>());
     }
 
-    public async Task Start(ChessClock chessClock)
+    public async Task Start()
     {
         try
         {
-            _chessGame.SetClock(chessClock);
             var t1 = _whiteEngine.StartAsync();
             var t2 = _blackEngine.StartAsync();
             await Task.WhenAll(t1, t2);
@@ -153,7 +152,7 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
             var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
             ArgumentNullException.ThrowIfNull(move, e.Move);
             var san = PgnSerializer.ToSan(move, ChessGame.CurrentPosition);
-            var moveResult = _chessGame.TryApplyMove(move, san);
+            var moveResult = _chessGame.ApplyMove(move, san);
             if (moveResult != MoveState.Ok)
             {
                 Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
@@ -189,7 +188,7 @@ public sealed class EngineGame : IAsyncDisposable, IEngineGame
             var move = Uci.CreateMove(e.Move, ChessGame.CurrentPosition);
             ArgumentNullException.ThrowIfNull(move, e.Move);
             var san = PgnSerializer.ToSan(move, ChessGame.CurrentPosition);
-            var moveResult = _chessGame.TryApplyMove(move, san);
+            var moveResult = _chessGame.ApplyMove(move, san);
             if (moveResult != MoveState.Ok)
             {
                 Console.WriteLine(e.Move + " " + FenSerializer.Serialize(ChessGame.CurrentPosition));
