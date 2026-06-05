@@ -17,22 +17,11 @@ public sealed class Status
     public int Depth { get; internal set; }
     public string? CurrentMove { get; internal set; }
     public string? Error { get; internal set; }
-    public IReadOnlyDictionary<int, Pv> Pvs => _pvs.AsReadOnly();
-    private ConcurrentDictionary<int, Pv> _pvs = [];
+    public IReadOnlyDictionary<int, Pv> Pvs => _pvs;
+    private readonly ConcurrentDictionary<int, Pv> _pvs = [];
 
     internal Pv GetPv(int i)
-    {
-        if (_pvs.TryGetValue(i, out Pv? pv))
-        {
-            return pv;
-        }
-        else
-        {
-            pv = new Pv(i);
-            _pvs.AddOrUpdate(i, pv, (key, value) => pv);
-            return pv;
-        }
-    }
+        => _pvs.GetOrAdd(i, static key => new Pv(key));
 
     public Eval? GetEval(PieceColor sideToMove)
     {
@@ -42,23 +31,7 @@ public sealed class Status
         if (EngineState == EngineState.BestMove && string.IsNullOrEmpty(BestMove))
             return null;
 
-        var vals = pv.GetValues();
-
-        int score = vals.GetValueOrDefault("cp", 0);
-        int mate = vals.GetValueOrDefault("mate", 0);
-
-        if (sideToMove == PieceColor.Black)
-        {
-            score = -score;
-            mate = -mate;
-        }
-
-        return new Eval
-        {
-            Score = score,
-            Mate = mate != 0 ? mate : null,
-            PvInfo = new PvInfo(pv.MultiPv, vals, pv.GetMoves())
-        };
+        return pv.GetEval(sideToMove);
     }
 }
 
@@ -111,8 +84,17 @@ public sealed record Pv
     public int MultiPv { get; init; }
     public int? Centipawns { get; private set; }
     public int? Mate { get; private set; }
-    private Dictionary<string, int> Values { get; set; } = [];
-    private List<string> Moves { get; set; } = [];
+    private int Depth { get; set; }
+    private int SelDepth { get; set; }
+    private int Nodes { get; set; }
+    private int Nps { get; set; }
+    private int HashFull { get; set; }
+    private int TbHits { get; set; }
+    private int Time { get; set; }
+    private string MovesSource { get; set; } = string.Empty;
+    private int MovesStart { get; set; }
+    private int MovesLength { get; set; }
+    private string[]? MovesSnapshot { get; set; }
     private readonly Lock lockobject = new();
 
     public Pv(int multiPv)
@@ -124,7 +106,15 @@ public sealed record Pv
     {
         lock (lockobject)
         {
-            Values = values;
+            Depth = values.GetValueOrDefault("depth", 0);
+            SelDepth = values.GetValueOrDefault("seldepth", 0);
+            Centipawns = values.TryGetValue("cp", out var cp) ? cp : null;
+            Mate = values.TryGetValue("mate", out var mate) ? mate : null;
+            Nodes = values.GetValueOrDefault("nodes", 0);
+            Nps = values.GetValueOrDefault("nps", 0);
+            HashFull = values.GetValueOrDefault("hashfull", 0);
+            TbHits = values.GetValueOrDefault("tbhits", 0);
+            Time = values.GetValueOrDefault("time", 0);
         }
     }
 
@@ -132,7 +122,72 @@ public sealed record Pv
     {
         lock (lockobject)
         {
-            Moves = moves;
+            MovesSource = string.Join(' ', moves);
+            MovesStart = 0;
+            MovesLength = MovesSource.Length;
+            MovesSnapshot = null;
+        }
+    }
+
+    internal void SetInfo(
+        int depth,
+        int selDepth,
+        int? centipawns,
+        int? mate,
+        int nodes,
+        int nps,
+        int hashFull,
+        int tbHits,
+        int time,
+        string movesText)
+        => SetInfo(
+            depth,
+            selDepth,
+            centipawns,
+            mate,
+            nodes,
+            nps,
+            hashFull,
+            tbHits,
+            time,
+            movesText,
+            0,
+            movesText.Length);
+
+    internal void SetInfo(
+        int depth,
+        int selDepth,
+        int? centipawns,
+        int? mate,
+        int nodes,
+        int nps,
+        int hashFull,
+        int tbHits,
+        int time,
+        string movesSource,
+        int movesStart,
+        int movesLength)
+    {
+        lock (lockobject)
+        {
+            Depth = depth;
+            SelDepth = selDepth;
+            Centipawns = centipawns;
+            Mate = mate;
+            Nodes = nodes;
+            Nps = nps;
+            HashFull = hashFull;
+            TbHits = tbHits;
+            Time = time;
+            if (!ReferenceEquals(MovesSource, movesSource)
+                || MovesStart != movesStart
+                || MovesLength != movesLength)
+            {
+                MovesSource = movesSource;
+                MovesStart = movesStart;
+                MovesLength = movesLength;
+                MovesSnapshot = null;
+            }
         }
     }
 
@@ -140,7 +195,24 @@ public sealed record Pv
     {
         lock (lockobject)
         {
-            return new Dictionary<string, int>(Values);
+            Dictionary<string, int> values = new()
+            {
+                ["multipv"] = MultiPv,
+                ["depth"] = Depth,
+                ["seldepth"] = SelDepth,
+                ["nodes"] = Nodes,
+                ["nps"] = Nps,
+                ["hashfull"] = HashFull,
+                ["tbhits"] = TbHits,
+                ["time"] = Time
+            };
+
+            if (Centipawns.HasValue)
+                values["cp"] = Centipawns.Value;
+            if (Mate.HasValue)
+                values["mate"] = Mate.Value;
+
+            return values;
         }
     }
 
@@ -148,7 +220,7 @@ public sealed record Pv
     {
         lock (lockobject)
         {
-            return [.. Moves];
+            return [.. GetOrCreateMovesSnapshot()];
         }
     }
 
@@ -159,6 +231,99 @@ public sealed record Pv
             Centipawns = cp;
             Mate = mate;
         }
+    }
+
+    internal Eval GetEval(PieceColor sideToMove)
+    {
+        int score;
+        int mate;
+        int depth;
+        int selDepth;
+        int nodes;
+        int nps;
+        int hashFull;
+        int tbHits;
+        int time;
+        string[] moves;
+
+        lock (lockobject)
+        {
+            score = Centipawns ?? 0;
+            mate = Mate ?? 0;
+            depth = Depth;
+            selDepth = SelDepth;
+            nodes = Nodes;
+            nps = Nps;
+            hashFull = HashFull;
+            tbHits = TbHits;
+            time = Time;
+            moves = GetOrCreateMovesSnapshot();
+        }
+
+        if (sideToMove == PieceColor.Black)
+        {
+            score = -score;
+            mate = -mate;
+        }
+
+        return new Eval
+        {
+            Score = score,
+            Mate = mate != 0 ? mate : null,
+            Depth = depth,
+            PvInfo = new PvInfo(
+                MultiPv,
+                depth,
+                selDepth,
+                score,
+                mate,
+                nodes,
+                nps,
+                hashFull,
+                tbHits,
+                time,
+                moves)
+        };
+    }
+
+    private string[] GetOrCreateMovesSnapshot()
+    {
+        if (MovesSnapshot is not null)
+            return MovesSnapshot;
+
+        MovesSnapshot = SplitMoves(MovesSource.AsSpan(MovesStart, MovesLength));
+        return MovesSnapshot;
+    }
+
+    private static string[] SplitMoves(ReadOnlySpan<char> movesText)
+    {
+        movesText = movesText.Trim();
+        if (movesText.IsEmpty)
+            return [];
+
+        var count = 1;
+        for (var i = 0; i < movesText.Length; i++)
+        {
+            if (movesText[i] == ' ')
+                count++;
+        }
+
+        var moves = new string[count];
+        var moveIndex = 0;
+        while (!movesText.IsEmpty)
+        {
+            var end = movesText.IndexOf(' ');
+            if (end < 0)
+            {
+                moves[moveIndex] = movesText.ToString();
+                break;
+            }
+
+            moves[moveIndex++] = movesText[..end].ToString();
+            movesText = movesText[(end + 1)..].TrimStart();
+        }
+
+        return moves;
     }
 }
 
@@ -177,6 +342,34 @@ public sealed record PvInfo : IPvInfo
     public IReadOnlyList<string> Moves { get; init; } = [];
 
     public PvInfo() { }
+
+    internal PvInfo(
+        int pvNum,
+        int depth,
+        int selDepth,
+        int score,
+        int mate,
+        int nodes,
+        int nps,
+        int hashFull,
+        int tbHits,
+        int time,
+        IReadOnlyList<string> moves)
+    {
+        ArgumentNullException.ThrowIfNull(moves);
+        MultiPv = pvNum;
+        Depth = depth;
+        SelDepth = selDepth;
+        Score = score;
+        Mate = mate;
+        Nodes = nodes;
+        Nps = nps;
+        HashFull = hashFull;
+        TbHits = tbHits;
+        Time = time;
+        Moves = moves;
+    }
+
     public PvInfo(int pvNum, Dictionary<string, int> pvValues, ICollection<string> pvMoves)
     {
         ArgumentNullException.ThrowIfNull(pvValues);

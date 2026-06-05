@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/pax.uciChessEngine.benchmark/pax.uciChessEngine.benchmark.csproj" />
     <Project Path="src/pax.uciChessEngine.tests/pax.uciChessEngine.tests.csproj" />
     <Project Path="src/pax.uciChessEngine/pax.uciChessEngine.csproj" />
   </Folder>

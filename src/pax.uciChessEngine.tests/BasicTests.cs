@@ -42,6 +42,94 @@ public sealed class BasicTests
     }
 
     [TestMethod]
+    public void CanParseCentipawnInfo()
+    {
+        var msg = "info depth 24 seldepth 49 multipv 1 score cp 35 nodes 2055087 nps 546420 hashfull 663 tbhits 0 time 3761 pv e2e4 e7e5 g1f3";
+        var engine = new UciEngine(binaryPath);
+
+        engine.TestParseUciString(msg);
+
+        var eval = engine.Status.GetEval(PieceColor.White);
+        Assert.IsNotNull(eval);
+        Assert.AreEqual(35, eval.Score);
+        Assert.AreEqual(24, eval.Depth);
+        Assert.AreEqual(49, eval.PvInfo.SelDepth);
+        Assert.AreEqual(2055087, eval.PvInfo.Nodes);
+        Assert.HasCount(3, eval.PvInfo.Moves);
+    }
+
+    [TestMethod]
+    public void CanParseMateInfo()
+    {
+        var msg = "info depth 245 seldepth 2 multipv 1 score mate 1 nodes 10540 nps 103333 hashfull 0 tbhits 0 time 102 pv h5f7";
+        var engine = new UciEngine(binaryPath);
+
+        engine.TestParseUciString(msg);
+
+        var eval = engine.Status.GetEval(PieceColor.White);
+        Assert.IsNotNull(eval);
+        Assert.AreEqual(0, eval.Score);
+        Assert.AreEqual(1, eval.Mate);
+        Assert.AreEqual(1, eval.PvInfo.Mate);
+    }
+
+    [TestMethod]
+    public void CanParseMultiPvInfo()
+    {
+        var engine = new UciEngine(binaryPath);
+
+        engine.TestParseUciString("info depth 12 seldepth 20 multipv 2 score cp -14 nodes 123 nps 456 hashfull 7 tbhits 0 time 89 pv d2d4 d7d5");
+
+        Assert.IsTrue(engine.Status.Pvs.ContainsKey(2));
+        var pv = engine.Status.Pvs[2];
+        Assert.AreEqual(2, pv.MultiPv);
+        Assert.AreEqual(-14, pv.Centipawns);
+    }
+
+    [TestMethod]
+    public void CanParseBestMoveNone()
+    {
+        var engine = new UciEngine(binaryPath);
+
+        engine.TestParseUciString("bestmove (none)");
+
+        Assert.IsNull(engine.Status.BestMove);
+        Assert.IsNull(engine.Status.Ponder);
+        Assert.AreEqual(EngineState.BestMove, engine.Status.EngineState);
+    }
+
+    [TestMethod]
+    public void CanParseStartupOptions()
+    {
+        var engine = new UciEngine(binaryPath);
+
+        engine.TestParseUciString("option name Threads type spin default 1 min 1 max 1024");
+        engine.TestParseUciString("option name Use NNUE type check default true");
+        engine.TestParseUciString("option name EvalFile type string default <empty>");
+        engine.TestParseUciString("option name Skill Level type combo default Normal var Easy var Normal var Hard");
+
+        Assert.HasCount(4, engine.Status.EngineOptions);
+
+        var threads = engine.Status.EngineOptions.Single(o => o.Name == "Threads");
+        Assert.AreEqual("spin", threads.Type);
+        Assert.AreEqual(1, threads.Min);
+        Assert.AreEqual(1024, threads.Max);
+
+        var nnue = engine.Status.EngineOptions.Single(o => o.Name == "Use NNUE");
+        Assert.AreEqual("check", nnue.Type);
+        Assert.IsTrue((bool)nnue.Default);
+
+        var evalFile = engine.Status.EngineOptions.Single(o => o.Name == "EvalFile");
+        Assert.AreEqual("string", evalFile.Type);
+        Assert.AreEqual(string.Empty, evalFile.Default);
+
+        var skill = engine.Status.EngineOptions.Single(o => o.Name == "Skill Level");
+        Assert.AreEqual("combo", skill.Type);
+        Assert.IsNotNull(skill.Vars);
+        CollectionAssert.AreEqual(new[] { "Easy", "Normal", "Hard" }, skill.Vars.ToArray());
+    }
+
+    [TestMethod]
     public async Task CanCreateEval3()
     {
         ChessGame chessGame = PgnSerializer.Parse("1. e4 d6 2. Ne2 Nf6 3. Nbc3 g6 4. g3 Bg7 5. Bg2 O-O 6. d3 c5 7. h3 Nc6 8. O-O Ne8 9. f4 Nc7 10. Be3 Rb8 11. Qd2 b5 12. e5 Bb7 13. exd6 exd6");

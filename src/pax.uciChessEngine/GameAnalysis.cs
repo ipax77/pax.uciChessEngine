@@ -1,5 +1,6 @@
 
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading.Channels;
 using pax.chess;
 using pax.chess.Extensions;
@@ -58,20 +59,7 @@ public sealed partial class GameAnalysis : IAsyncDisposable, IGameAnalysis
 
         _ = Task.Run(async () =>
         {
-            for (int i = 0; i < engineMoves.Count; i++)
-            {
-                var position = string.Join(' ', engineMoves.Take(i + 1));
-
-                var side = i % 2 == 0
-                    ? PieceColor.Black
-                    : PieceColor.White;
-
-                await workChannel.Writer.WriteAsync(
-                    new AnalysisTask(i + 1, position, side),
-                    token);
-            }
-
-            workChannel.Writer.Complete();
+            await EnqueueAnalysisTasks(engineMoves, workChannel.Writer, token);
         }, token);
 
         _ = Task.Run(async () =>
@@ -98,20 +86,7 @@ public sealed partial class GameAnalysis : IAsyncDisposable, IGameAnalysis
         // enqueue work
         _ = Task.Run(async () =>
         {
-            for (int i = 0; i < engineMoves.Count; i++)
-            {
-                var position = string.Join(' ', engineMoves.Take(i + 1));
-
-                var side = i % 2 == 0
-                    ? PieceColor.Black
-                    : PieceColor.White;
-
-                await workChannel.Writer.WriteAsync(
-                    new AnalysisTask(i + 1, position, side),
-                    cts.Token);
-            }
-
-            workChannel.Writer.Complete();
+            await EnqueueAnalysisTasks(engineMoves, workChannel.Writer, cts.Token);
         });
 
         var results = new List<AnalysisEval>();
@@ -192,6 +167,31 @@ public sealed partial class GameAnalysis : IAsyncDisposable, IGameAnalysis
                 }, token);
             }
         }
+    }
+
+    private static async Task EnqueueAnalysisTasks(
+        List<string> engineMoves,
+        ChannelWriter<AnalysisTask> writer,
+        CancellationToken token)
+    {
+        var positionBuilder = new StringBuilder();
+
+        for (int i = 0; i < engineMoves.Count; i++)
+        {
+            if (positionBuilder.Length > 0)
+                positionBuilder.Append(' ');
+            positionBuilder.Append(engineMoves[i]);
+
+            var side = i % 2 == 0
+                ? PieceColor.Black
+                : PieceColor.White;
+
+            await writer.WriteAsync(
+                new AnalysisTask(i + 1, positionBuilder.ToString(), side),
+                token);
+        }
+
+        writer.Complete();
     }
 
     public async ValueTask DisposeAsync()

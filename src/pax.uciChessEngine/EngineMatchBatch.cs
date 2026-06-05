@@ -32,7 +32,10 @@ public sealed record EngineMatchBatchRequest(
     int MatchCount,
     TimeSpan BaseTime,
     TimeSpan Increment,
-    bool ReverseEngines);
+    bool ReverseEngines)
+{
+    public bool RetainFinishedGames { get; init; } = true;
+}
 
 public sealed class EngineMatchBatch : IAsyncDisposable
 {
@@ -201,7 +204,8 @@ public sealed class EngineMatchBatch : IAsyncDisposable
             summary.Status = cancellationToken.IsCancellationRequested
                 ? EngineMatchStatus.Cancelled
                 : EngineMatchStatus.Finished;
-            summary.Game = game;
+            if (request.RetainFinishedGames)
+                summary.Game = game;
             NotifyMatchUpdated(summary);
         }
         catch (OperationCanceledException)
