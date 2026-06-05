@@ -4,9 +4,8 @@ using pax.uciChessEngine;
 // See https://aka.ms/new-console-template for more information
 Console.WriteLine("Hello, World!");
 
-await AnalyseGame();
-
-Console.ReadLine();
+// await AnalyseGame();
+await PlayGame();
 
 static async Task PlayGame()
 {
@@ -15,10 +14,17 @@ static async Task PlayGame()
     var engine1 = new UciEngine(b2);
     var engine2 = new UciEngine(b1);
 
-    var game = new EngineGame(engine1, engine2);
-    var clock = new ChessClock(TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(0), new ChessClockConsoleDisplay());
+    using var clock = new ChessClock(TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(0), new ChessClockConsoleDisplay());
+    var chessGame = new ChessGame(new ChessGameOptions { Clock = clock });
+    await using var game = new EngineGame(engine1, engine2, chessGame);
+    var gameFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    using var stopCts = new CancellationTokenSource();
 
     Console.Clear();
+    Console.WriteLine("Engine game started. Press Ctrl+C to stop.");
+
+    Console.CancelKeyPress += OnCancelKeyPress;
+
     game.MoveReady += (_, e) =>
     {
         Console.WriteLine(game.ChessGame.CurrentPosition.Board.ToString());
@@ -33,11 +39,28 @@ static async Task PlayGame()
 
         var pgn = PgnSerializer.Serialize(game.ChessGame);
         Console.WriteLine(pgn);
+        gameFinished.TrySetResult();
     };
 
-    await game.Start(clock);
+    try
+    {
+        await game.Start();
+        await gameFinished.Task.WaitAsync(stopCts.Token);
+    }
+    catch (OperationCanceledException) when (stopCts.IsCancellationRequested)
+    {
+        await game.StopGame();
+    }
+    finally
+    {
+        Console.CancelKeyPress -= OnCancelKeyPress;
+    }
 
-    await game.DisposeAsync();
+    void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
+    {
+        e.Cancel = true;
+        stopCts.Cancel();
+    }
 }
 
 static async Task AnalyseGame()

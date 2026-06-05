@@ -177,14 +177,13 @@ public sealed class BasicTests
     {
         using CancellationTokenSource cts = new();
 
+        using var chessClock = new ChessClock(TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(1));
+        var chessGame = new ChessGame(new ChessGameOptions { Clock = chessClock });
         var engine1 = new UciEngine(binaryPath);
         var engine2 = new UciEngine(binaryPath);
-        var chessGame = new ChessGame();
-        var engineGame = new EngineGame(engine1, engine2, chessGame);
-        var chessClock = new ChessClock(TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(1));
-        chessGame.SetClock(chessClock);
+        await using var engineGame = new EngineGame(engine1, engine2, chessGame);
         
-        var gameTask = engineGame.Start(chessClock);
+        var gameTask = engineGame.Start();
         await Task.Delay(100, cts.Token);
         await engineGame.StopGame();
 
@@ -200,15 +199,26 @@ public sealed class BasicTests
     {
         using CancellationTokenSource cts = new();
 
+        using var chessClock = new ChessClock(TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(1));
+        var chessGame = new ChessGame(new ChessGameOptions { Clock = chessClock });
         var engine1 = new UciEngine(binaryPath);
         var engine2 = new UciEngine(binaryPath);
-        var chessGame = new ChessGame();
-        var engineGame = new EngineGame(engine1, engine2, chessGame);
-        var chessClock = new ChessClock(TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(1));
-        chessGame.SetClock(chessClock);
+        await using var engineGame = new EngineGame(engine1, engine2, chessGame);
         
-        var gameTask = engineGame.Start(chessClock);
-        await Task.Delay(3_000, cts.Token);
+        var gameTask = engineGame.Start();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < deadline
+            && engine1.Status.EngineState != EngineState.Calculating
+            && engine2.Status.EngineState != EngineState.Calculating)
+        {
+            await Task.Delay(25, cts.Token);
+        }
+
+        Assert.IsTrue(
+            engine1.Status.EngineState == EngineState.Calculating
+            || engine2.Status.EngineState == EngineState.Calculating,
+            "Expected one engine to start calculating before StopGame is requested.");
+
         await engineGame.StopGame();
 
         var completed = await Task.WhenAny(gameTask, Task.Delay(4_000, cts.Token));
