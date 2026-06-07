@@ -30,6 +30,15 @@ public sealed class EngineSession : IAsyncDisposable
             {
                 await _engine.SetOption("Hash", _options.HashMb, ct);
             }
+            if (!string.IsNullOrWhiteSpace(_options.WeightsPath))
+            {
+                await _engine.SetOption("WeightsFile", _options.WeightsPath, ct);
+            }
+
+            foreach (var option in ParseExtraOptions(_options.ExtraOptions))
+            {
+                await _engine.SetOption(option.Name, option.Value, ct);
+            }
         }
     }
 
@@ -51,6 +60,33 @@ public sealed class EngineSession : IAsyncDisposable
     }
 
     public bool IsBusy => _lock.CurrentCount == 0;
+
+    private static IEnumerable<(string Name, string Value)> ParseExtraOptions(string? options)
+    {
+        if (string.IsNullOrWhiteSpace(options))
+            yield break;
+
+        foreach (var rawLine in options.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0 || line.StartsWith('#'))
+                continue;
+
+            var separator = line.IndexOf('=', StringComparison.Ordinal);
+            if (separator < 0)
+                separator = line.IndexOf(':', StringComparison.Ordinal);
+
+            if (separator <= 0 || separator == line.Length - 1)
+                continue;
+
+            var name = line[..separator].Trim();
+            var value = line[(separator + 1)..].Trim();
+            if (name.Length == 0 || value.Length == 0)
+                continue;
+
+            yield return (name, value);
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {

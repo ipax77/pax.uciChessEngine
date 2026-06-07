@@ -20,6 +20,17 @@ public sealed class Status
     public IReadOnlyDictionary<int, Pv> Pvs => _pvs;
     private readonly ConcurrentDictionary<int, Pv> _pvs = [];
 
+    internal void BeginSearch()
+    {
+        BestMove = null;
+        Ponder = null;
+        CurrentMove = null;
+        Error = null;
+        Depth = 0;
+        EngineState = EngineState.Calculating;
+        _pvs.Clear();
+    }
+
     internal Pv GetPv(int i)
         => _pvs.GetOrAdd(i, static key => new Pv(key));
 

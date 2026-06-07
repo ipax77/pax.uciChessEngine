@@ -4,11 +4,18 @@ namespace pax.uciChessEngine.EngineServices;
 
 public sealed class EngineRunOptions
 {
+    public const string UciEngineType = "UCI";
+    public const string UciWithWeightsEngineType = "UCI + weights";
+
     public Guid Id { get; } = Guid.NewGuid();
 
     [Required]
     public string BinaryPath { get; set; } = string.Empty;
     public string? Name { get; set; }
+    public string EngineType { get; set; } = UciEngineType;
+    public string? WeightsPath { get; set; }
+    public string? ExtraOptions { get; set; }
+    public bool IsEnabled { get; set; } = true;
 
     [Range(0, 256)]
     public int Threads { get; set; }

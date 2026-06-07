@@ -1,4 +1,5 @@
 using pax.chess;
+using pax.chess.Extensions;
 using pax.uciChessEngine.EngineServices;
 
 namespace pax.uciChessEngine.tests;
@@ -154,6 +155,104 @@ public sealed class UciEngineIntegrationTests
     }
 
     [TestMethod]
+    public async Task ReusedEngineDoesNotReturnStalePvForTerminalPosition()
+    {
+        var enginePath = TestEngine.RequirePath();
+        var normalGame = PgnSerializer.Parse("1. e4 e5");
+        var terminalGame = PgnSerializer.Parse("1. f4 e6 2. g4 Qh4#");
+
+        await using var engine = new UciEngine(enginePath);
+        await engine.StartAsync();
+        await engine.SetOption("Threads", 1);
+        await engine.SetOption("MultiPV", 2);
+
+        var normalFen = FenSerializer.Serialize(normalGame.CurrentPosition);
+        var normal = await EngineService.GetEvaluation(
+            normalFen,
+            normalGame.CurrentPosition.SideToMove,
+            TimeSpan.FromMilliseconds(200),
+            engine);
+        Assert.IsGreaterThan(0, normal.Count);
+
+        var terminalFen = FenSerializer.Serialize(terminalGame.CurrentPosition);
+        var terminal = await EngineService.GetEvaluation(
+            terminalFen,
+            terminalGame.CurrentPosition.SideToMove,
+            TimeSpan.FromMilliseconds(200),
+            engine);
+
+        Assert.HasCount(0, terminal);
+    }
+
+    [TestMethod]
+    public async Task ContinualEvaluationDoesNotReturnStalePvForTerminalPosition()
+    {
+        var enginePath = TestEngine.RequirePath();
+        var normalGame = PgnSerializer.Parse("1. e4 e5");
+        var terminalGame = PgnSerializer.Parse("1. f4 e6 2. g4 Qh4#");
+        var normalMoves = string.Join(' ', normalGame.Moves.Select(m => Uci.GetUci(m.Move)));
+        var terminalMoves = string.Join(' ', terminalGame.Moves.Select(m => Uci.GetUci(m.Move)));
+
+        await using var engine = new UciEngine(enginePath);
+        await engine.StartAsync();
+        await engine.SetOption("Threads", 1);
+        await engine.SetOption("MultiPV", 2);
+
+        await foreach (var evals in EngineService.GetContinualEvaluation(
+            normalMoves,
+            normalGame.CurrentPosition.SideToMove,
+            engine,
+            CancellationToken.None))
+        {
+            if (evals.Count > 0)
+                break;
+        }
+
+        var terminalSnapshots = new List<List<Eval>>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await foreach (var evals in EngineService.GetContinualEvaluation(
+            terminalMoves,
+            terminalGame.CurrentPosition.SideToMove,
+            engine,
+            cts.Token))
+        {
+            terminalSnapshots.Add(evals);
+        }
+
+        Assert.IsGreaterThan(0, terminalSnapshots.Count);
+        Assert.IsTrue(terminalSnapshots.All(evals => evals.Count == 0));
+    }
+
+    [TestMethod]
+    public async Task SearchResetStillAllowsLaterNonTerminalEvaluation()
+    {
+        var enginePath = TestEngine.RequirePath();
+        var terminalGame = PgnSerializer.Parse("1. f4 e6 2. g4 Qh4#");
+        var normalGame = PgnSerializer.Parse("1. e4 e5");
+
+        await using var engine = new UciEngine(enginePath);
+        await engine.StartAsync();
+        await engine.SetOption("Threads", 1);
+        await engine.SetOption("MultiPV", 2);
+
+        var terminalFen = FenSerializer.Serialize(terminalGame.CurrentPosition);
+        var terminal = await EngineService.GetEvaluation(
+            terminalFen,
+            terminalGame.CurrentPosition.SideToMove,
+            TimeSpan.FromMilliseconds(200),
+            engine);
+        Assert.HasCount(0, terminal);
+
+        var normalFen = FenSerializer.Serialize(normalGame.CurrentPosition);
+        var normal = await EngineService.GetEvaluation(
+            normalFen,
+            normalGame.CurrentPosition.SideToMove,
+            TimeSpan.FromMilliseconds(200),
+            engine);
+        Assert.IsGreaterThan(0, normal.Count);
+    }
+
+    [TestMethod]
     public async Task CanCancelGracefully()
     {
         var enginePath = TestEngine.RequirePath();
@@ -209,5 +308,17 @@ public sealed class UciEngineIntegrationTests
         Assert.AreSame(gameTask, completed, "Game task should finish after StopGame is requested.");
         Assert.IsFalse(gameTask.IsCanceled, "Game task should not be canceled.");
         Assert.IsFalse(gameTask.IsFaulted, gameTask.Exception?.ToString());
+    }
+
+    [TestMethod]
+    public async Task CanHandleBestMoveOnTerminalPosition()
+    {
+        var enginePath = TestEngine.RequirePath();
+        ChessGame chessGame = PgnSerializer.Parse("1. f4 e6 2. g4 Qh4#");
+        var fen = FenSerializer.Serialize(chessGame.CurrentPosition);
+        await using var engine = new UciEngine(enginePath);
+        await engine.StartAsync();
+        var result = await engine.GetBestMoveAsync(fen, TimeSpan.FromSeconds(1));
+        Assert.IsNull(result);
     }
 }

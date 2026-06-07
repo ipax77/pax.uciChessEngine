@@ -43,6 +43,7 @@ public static class EngineService
         try
         {
             await engine.SendAsync($"position fen {fen}", token);
+            engine.Status.BeginSearch();
 
             var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -83,6 +84,7 @@ public static class EngineService
         try
         {
             await engine.SendAsync($"position startpos moves {moves}", token);
+            engine.Status.BeginSearch();
 
             var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -116,6 +118,9 @@ public static class EngineService
 
     private static List<Eval> GetEvaluations(Status status, PieceColor sideToMove)
     {
+        if (status.EngineState == EngineState.BestMove && string.IsNullOrEmpty(status.BestMove))
+            return [];
+
         List<Eval> evals = [];
         foreach (var pv in status.Pvs.Values.OrderBy(o => o.MultiPv))
         {

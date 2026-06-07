@@ -151,6 +151,7 @@ public sealed partial class UciEngine : IAsyncDisposable, IUciEngine
 
             await SendAsync("ucinewgame", ct);
             await SendAsync($"position fen {fen}", ct);
+            _status.BeginSearch();
             await SendAsync($"go movetime {(int)thinkTime.TotalMilliseconds}", ct);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _engineCts.Token);
